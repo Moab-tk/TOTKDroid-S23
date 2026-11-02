@@ -268,15 +268,12 @@ static int row(const char *label, const std::string &value, bool changed, const 
     if (g_desc_first.empty() && g_name_first.empty()) g_desc_first = desc ? desc : "", g_name_first = name;
 
     ImDrawList *dl = ImGui::GetWindowDrawList();
-    const ImU32 jade = IM_COL32(91, 224, 166, 235), gold = IM_COL32(186, 157, 97, off ? 60 : 110);
-    ImVec2 b(p.x + w, p.y + h - 2 * s);
-    if (sel) {
-        dl->AddRectFilled(ImVec2(p.x + 2, p.y + 2 * s), b, IM_COL32(24, 112, 72, off ? 30 : 70), 4 * s);
-        ui_zonai_frame(dl, ImVec2(p.x + 2, p.y + 2 * s), b, off ? IM_COL32(91, 224, 166, 90) : jade, 8 * s, 2 * s);
-    } else {
-        dl->AddLine(ImVec2(p.x + 10 * s, p.y + h - 1), ImVec2(p.x + w, p.y + h - 1), gold, 1);
-        ui_zonai_diamond(dl, ImVec2(p.x + 6 * s, p.y + h - 1), 3 * s, gold, false);
-    }
+    const ImU32 jade = IM_COL32(91, 224, 166, 235);
+    // (S23) each row a card, as in BOTW S23; the selected one lit
+    float rad = 12 * s;
+    ImVec2 a(p.x + 2, p.y + 4 * s), b(p.x + w - 2, p.y + h - 4 * s);
+    dl->AddRectFilled(a, b, sel ? IM_COL32(24, 112, 72, off ? 40 : 95) : IM_COL32(255, 255, 255, off ? 5 : 12), rad);
+    if (sel) dl->AddRect(a, b, off ? IM_COL32(91, 224, 166, 90) : jade, rad, 0, 2 * s);
     float ty = cy - fs * 0.5f;
     ImU32 label_col = off ? IM_COL32(120, 120, 112, 255) : IM_COL32(240, 235, 218, 255);
     // the label: up to the value's column, sliding when it doesn't fit; with no value, the whole row
