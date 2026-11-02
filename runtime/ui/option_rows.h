@@ -8,6 +8,9 @@
 //   opt_end();
 #pragma once
 
+struct ImDrawList;
+struct ImVec2;
+
 void opt_begin(const char *id, float scale);
 void opt_section(const char *title);
 bool opt_toggle(const char *label, bool *v, bool def, const char *desc);
@@ -40,6 +43,10 @@ void opt_end(void);
 // the next page's first row takes the controller's cursor (Down on the tab bar: ImGui's own pick across the nested
 // panes was unreliable - some tabs went to a row further down, some nowhere). Cleared by the next opt_begin / call.
 void opt_focus_first(bool on);
+
+// Text in a box of width w at p: as it is when it fits, else it slides to show its end and back (S23: long names with
+// the bigger text; nothing is cut off)
+void ui_marquee_text(ImDrawList *dl, ImVec2 p, float w, unsigned int col, const char *text);
 
 // Android: call inside each scrollable child before drawing its controls.
 void ui_touch_scroll();

@@ -19,6 +19,7 @@
 #include <string>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <time.h>
 #include <unistd.h>
 #include <vector>
 #include <algorithm>
@@ -538,6 +539,8 @@ static void android_call_int(const char *method, int v) {  // (one int argument)
 extern "C" void android_log_file(bool on);
 extern "C" bool vk_adreno_8xx(const char *name);  // (Driver compatibility's Automatic: runtime/nvn/vulkan/device.c)
 extern "C" bool vk_lrz_at_start(void);
+extern "C" bool vk_tests_changed(void);
+extern "C" void vk_gpu_turbo(bool front);
 extern "C" const char *vk_gpu_name(void);
 extern "C" const char *vk_driver_rejected(void);  // (runtime/nvn/vulkan/android_driver.c)
 extern "C" const char *vk_driver_desc(void);      // (its own name and version: runtime/nvn/vulkan/device.c)
@@ -1056,7 +1059,7 @@ static void load_background(GpuDevice dev) {
 
 // ------------------------------------------------------------------ screen
 static ImFont *g_font_title, *g_font_menu, *g_font_small;
-enum Page { MAIN, SETTINGS, SETUP };  // SETTINGS: the in-game menu's tabs (runtime/ui/menu.mm)
+enum Page { MAIN, SETTINGS, SETUP, BLOCKS };  // SETTINGS: the in-game menu's tabs (runtime/ui/menu.mm)
 static int g_refocus = MAIN;  // back on the main page: select the item of the page we came from (controllers)
 
 // A big menu line: gold + a marker when focused / hovered (keyboard, gamepad or mouse), grey when disabled
@@ -1394,10 +1397,561 @@ static void version_rows(bool busy, bool focus) {
     }
 }
 
+// (S23) The end of the Video tab on the start screen (ui/menu.mm tab_display): options read when the game or the app starts.
+void launcher_video_options(void) {
+    bool changed = false;
+    opt_section("Frame rhythm");
+    changed |= opt_toggle("Steady frames at 30 FPS", &g_settings.panel_lock, true,
+                          "Keeps the screen at 60 Hz and shows each frame on the screen's own rhythm, so the game feels smoother "
+                          "at 30 FPS. It adds a little delay to the controls. Applies when the game starts.");
+
+    opt_section("Advanced");
+    {   // (runtime/settings.h gpu_heap / inplace_reads / turnip_lrz / log_file: for GPUs where a Turnip path draws wrong)
+        const bool a8 = vk_adreno_8xx(vk_gpu_name());  // (Automatic: on for the Adreno 8xx and the 740)
+        const char *tri_names[] = {a8 ? "Automatic (on for this GPU)" : "Automatic (off for this GPU)", "On", "Off"};
+        auto tri = [&](const char *label, int *v, const char *desc) {  // Automatic / On / Off: -1 / 1 / 0
+            int i = *v < 0 ? 0 : *v ? 1 : 2;
+            if (opt_choice(label, &i, tri_names, 3, 0, desc)) {
+                *v = i == 0 ? -1 : i == 1 ? 1 : 0;
+                changed = true;
+            }
+        };
+        tri("Game memory on the GPU (Turnip)", &g_settings.gpu_heap,
+            "On: the game's memory is mapped straight into the GPU's, the fastest way. Off: what each frame uses is copied instead - it "
+            "draws right where the fast way doesn't, but this game runs at about half the frame rate (15 fps instead of 35 on an "
+            "Adreno 830). Automatic: on for Adreno 8xx GPUs, off for the others - on another Adreno, try On first. Applies when the "
+            "game starts.");
+        tri("Draw-target reads in place (Turnip)", &g_settings.inplace_reads,
+            "On: decals and effects read the image they draw on as it is, the fastest way. Off: a copy of it each time, slower (fewer "
+            "fps) but by the Vulkan rules. Automatic: on for Adreno 8xx GPUs, off for the others. Applies when the game starts.");
+        tri("Turnip low-resolution Z (LRZ)", &g_settings.turnip_lrz,
+            "Turnip's early depth test, a little faster. Off can fix missing or broken drawing on some Adreno GPUs. Automatic: on for "
+            "Adreno 8xx GPUs, off for the others. Applies when BOTWRecompAndroid restarts.");
+        bool lrz_now = g_settings.turnip_lrz < 0 ? a8 : g_settings.turnip_lrz != 0;
+        if (lrz_now != vk_lrz_at_start() && opt_button("Restart now##lrz", "Restart BOTWRecompAndroid to apply it.")) {
+            settings_save();
+            android_call("restartApp");
+        }
+    }
+
+    opt_section("Tests (optional)");
+    {   // (S23) from the look at Eden's options; all off by default, to compare one at a time
+        if (opt_toggle("Keep the GPU awake", &g_settings.gpu_turbo, false,
+                       "The GPU doesn't rest between frames, as Eden's force max clock: frame times may get steadier, but the "
+                       "phone gets hotter and the battery drains faster. It only stays on while the app is in front. On "
+                       "at once.")) {
+            vk_gpu_turbo(true);
+            changed = true;
+        }
+        int fifo = g_settings.present_fifo;
+        const char *present[] = {"Mailbox", "FIFO (default)"};
+        if (opt_choice("Presentation mode", &fifo, present, 2, 1,
+                       "How finished frames reach the screen. Mailbox: a newer frame replaces one still waiting. FIFO: every "
+                       "frame is shown, in order - it may look smoother, but if the screen falls behind the game waits for it. "
+                       "Applies when BOTWRecompAndroid restarts.")) {
+            g_settings.present_fifo = fifo != 0;
+            changed = true;
+        }
+        changed |= opt_int("Shader build threads", &g_settings.shader_workers, 0, 6, 1, 0, "%d",
+                           "CPU threads building shaders. Automatic: 4 on this phone. Fewer leave more CPU for the game, but "
+                           "effects take longer to appear; more get them ready sooner, and can take CPU from the game. Applies "
+                           "when the game starts.", "Automatic");
+        const char *aniso[] = {"Game's own", "Off", "2x", "4x", "8x", "16x"};
+        changed |= opt_choice("Anisotropic filtering", &g_settings.force_aniso, aniso, 6, 0,
+                              "Sharpness of textures seen at an angle, as the ground far away. Game's own: what the game asks for. "
+                              "Off and low values save some GPU time; high values look sharper and cost more. Applies when the "
+                              "game starts.");
+        const char *modes[] = {"Automatic", "Always tiled (gmem)", "Always direct (sysmem)", "No compression (noubwc)"};
+        changed |= opt_choice("Turnip drawing mode", &g_settings.turnip_mode, modes, 4, 0,
+                              "Only for the Turnip driver. Automatic: it picks for each pass, the best choice in general. The two "
+                              "fixed modes are there to compare frame rates. No compression is only to look for drawing errors, "
+                              "and it's slower. Applies when BOTWRecompAndroid restarts.");
+        if (vk_tests_changed() && opt_button("Restart now##tests", "Restart BOTWRecompAndroid to apply it.")) {
+            settings_save();
+            android_call("restartApp");
+        }
+    }
+    if (changed) settings_save();
+}
+
 static SDL_Window *g_launcher_win;
 static bool g_files_deleted;  // set here: the start screen goes back to setting the game files up
 static bool g_open_files;     // Settings > Prelaunch: the Game Files page (versions, setup) instead
+#ifdef __ANDROID__
+// (S23) Settings > Files as option rows: what's used most first, the long explanations in the side pane, and the kept
+// driver packages as a list to pick from (<external files>/drivers; active.txt names the chosen one, "-" the system's:
+// BOTWRecompAndroidActivity.customDriver reads it at the next start).
+static std::string drivers_dir() {
+    const char *d = getenv("LARECOMP_DRIVERS_DIR");
+    return d ? d : "";
+}
+static std::string driver_active() {  // the chosen file, "-" the system's, "" none chosen yet (the first one is used)
+    std::string a;
+    if (FILE *f = fopen((drivers_dir() + "/active.txt").c_str(), "rb")) {
+        char b[256];
+        size_t n = fread(b, 1, sizeof b - 1, f);
+        fclose(f);
+        a.assign(b, n);
+        while (!a.empty() && (a.back() == '\n' || a.back() == '\r' || a.back() == ' ')) a.pop_back();
+    }
+    return a;
+}
+static void driver_set_active(const std::string &name) {
+    if (FILE *f = fopen((drivers_dir() + "/active.txt").c_str(), "wb")) {
+        fputs(name.c_str(), f);
+        fclose(f);
+    }
+}
+static bool driver_file(const std::string &n) {
+    size_t dot = n.rfind('.');
+    if (dot == std::string::npos) return false;
+    std::string e = n.substr(dot + 1);
+    for (char &c : e) c = (char)tolower((unsigned char)c);
+    return e == "zip" || e == "adpkg" || e == "so";
+}
+static std::vector<std::string> driver_files() {
+    static std::vector<std::string> list;
+    static int age;
+    if (age-- <= 0) {  // (read again now and then: one just added shows up)
+        age = 30;
+        list.clear();
+        if (DIR *d = opendir(drivers_dir().c_str())) {
+            while (dirent *e = readdir(d))
+                if (driver_file(e->d_name)) list.push_back(e->d_name);
+            closedir(d);
+        }
+        std::sort(list.begin(), list.end());
+    }
+    return list;
+}
+static std::string driver_shown(const std::string &file) {  // (the package's name: as files/drivers/<name>/ has it)
+    size_t dot = file.rfind('.');
+    return dot == std::string::npos ? file : file.substr(0, dot);
+}
+static std::string driver_recommended() {  // the package for this phone, "" none: the Adreno 740's two (assets/drivers)
+    const char *gpu = vk_gpu_name(), *brand = getenv("LARECOMP_DEVICE_BRAND");
+    if (!gpu || !strstr(gpu, "740")) return "";
+    return brand && !strcasecmp(brand, "samsung") ? "Turnip-v27.0.0-20261025-r5-8G2-OneUI.zip" : "Turnip-v27.0.0-20261025-r5.zip";
+}
+static void note_row(const std::string &msg, bool failed = false) {  // a line under the rows
+    if (msg.empty()) return;
+    ImGui::Dummy(ImVec2(0, 6));
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextColored(failed ? ImVec4(1, 0.55f, 0.42f, 1) : ImVec4(0.45f, 0.95f, 0.75f, 1), "%s", msg.c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::Dummy(ImVec2(0, 6));
+}
+static void prelaunch_rows(float sc) {
+    opt_begin("##files", sc);
+    bool changed = false;
+
+    opt_section("Game");
+    {
+        std::string version = version_name(rt_game_version());
+        if (opt_action("Versions and setup", version.c_str(),
+                       "Versions 1.0.0, 1.6.0, 1.8.2 and 1.9.0 can be set up side by side, each with its own saves."))
+            g_open_files = true;
+    }
+
+    opt_section("Vulkan driver");
+    {
+        const char *d = getenv("LARECOMP_VK_DRIVER");
+        const char *rejected = vk_driver_rejected();  // (chosen, but the system's ran: android_driver.c)
+        std::string in_use;  // (its name: the folder of files/drivers/<name>/<library>; "": the system's)
+        if (d && *d && !*rejected) {
+            in_use = d;
+            size_t slash = in_use.rfind('/');
+            if (slash != std::string::npos) in_use.erase(slash);
+            slash = in_use.rfind('/');
+            if (slash != std::string::npos) in_use.erase(0, slash + 1);
+        }
+        std::vector<std::string> files = driver_files();
+        std::string active = driver_active();
+        if (active.empty() && !files.empty()) active = files[0];
+        if (active != "-" && !active.empty() && std::find(files.begin(), files.end(), active) == files.end()) active = "-";
+        const char *about = "The game runs on the system's driver, lighting included. On Adreno GPUs, Mesa's Turnip driver runs "
+                            "it faster: choose a Turnip driver package (.zip, as for adrenotools).";
+        auto pick = [](const std::string &name) {
+            driver_set_active(name);
+            pthread_mutex_lock(&g_lock);
+            g_driver_msg.clear(), g_driver_restart = false;  // (the last pick's message)
+            pthread_mutex_unlock(&g_lock);
+        };
+        const std::string recommended = driver_recommended();
+        for (const std::string &f : files) {
+            std::string desc = driver_shown(f) == in_use ? std::string(tr("In use now.")) + "\n\n" + vk_driver_desc() : std::string(tr(about));
+            // (S23) the two the app comes with: which phones each one is for
+            if (f == "Turnip-v27.0.0-20261025-r5-8G2-OneUI.zip")
+                desc = std::string(tr("For the Snapdragon 8 Gen 2 with Samsung's One UI, as the Galaxy S23. On other phones it can make the screen flicker.")) + "\n\n" + desc;
+            else if (f == "Turnip-v27.0.0-20261025-r5.zip")
+                desc = std::string(tr("For the Snapdragon 8 Gen 2 and other Adreno 6xx and 7xx GPUs. If the screen flickers on a Galaxy S23, use the One UI one.")) + "\n\n" + desc;
+            else if (f == "Turnip-v27.0.0-20261101-r4-8G2-OneUI.zip")
+                desc = std::string(tr("A newer build of the driver for the Snapdragon 8 Gen 2 with Samsung's One UI. Not tested on this game: the recommended one is the tested one.")) + "\n\n" + desc;
+            else if (f == "Turnip-v27.0.0-20261101-r4.zip")
+                desc = std::string(tr("A newer build of the driver for Adreno 6xx and 7xx GPUs. Not tested on this game: the recommended one is the tested one.")) + "\n\n" + desc;
+            else if (f == "Turnip-v27.0.0-20261101-r4-A8xx.zip")
+                desc = std::string(tr("An experimental driver for Adreno 8xx GPUs, as the Snapdragon 8 Elite. Not tested on this game.")) + "\n\n" + desc;
+            std::string label = driver_shown(f);
+            if (f == recommended) label += std::string(" - ") + tr("Recommended");
+            if (opt_radio(label.c_str(), f == active, desc.c_str())) pick(f);
+        }
+        if (opt_radio("Use the system driver", active == "-" || active.empty(), about)) pick("-");
+        if (opt_button("Add driver", "A Turnip package (.zip) from your files. It joins this list and is chosen; the others are kept."))
+            android_call("pickDriver");
+        static bool confirm;
+        if (active != "-" && !active.empty() && files.size() > 0) {
+            if (!confirm) {
+                if (opt_action("Remove this driver", driver_shown(active).c_str(), "Deletes the chosen package from the list.")) confirm = true;
+            } else {
+                if (opt_action("Yes, remove it", driver_shown(active).c_str(), "Deletes the chosen package from the list.")) {
+                    remove((drivers_dir() + "/" + active).c_str());
+                    driver_set_active("-");
+                    confirm = false;
+                }
+                if (opt_action("Cancel", "", "Keeps it.")) confirm = false;
+            }
+        }
+        std::string wanted = active == "-" ? "" : driver_shown(active);
+        pthread_mutex_lock(&g_lock);
+        std::string msg = g_driver_msg;
+        bool restart = g_driver_restart;
+        pthread_mutex_unlock(&g_lock);
+        if (restart || (wanted != in_use && !*rejected)) {
+            if (opt_button("Restart now", "The driver is loaded when the app starts.")) {
+                settings_save();
+                android_call("restartApp");
+            }
+        }
+        if (*rejected) {
+            char m[300];
+            snprintf(m, sizeof m, tr("%s couldn't be used on this GPU: choose a driver made for it."), rejected);
+            note_row(m, true);
+        }
+        note_row(msg);
+    }
+
+    opt_section("Saves");
+    {
+        pthread_mutex_lock(&g_lock);
+        std::string msg = g_save_msg;
+        bool failed = g_save_failed, sbusy = g_save_busy;
+        pthread_mutex_unlock(&g_lock);
+        const char *about = "The saves are in the app's own folder, out of file managers' reach. Export saves this version's as one "
+                            ".zip where you choose (to keep, edit, send or move them). Import replaces them with the saves in a "
+                            ".zip - one exported here, or any holding 0, 1, 2... and option.sav; Import from folder takes an "
+                            "emulator's save folder. The ones before are kept beside them. A save from a newer version of the game "
+                            "may not load in an older one.";
+        auto save = [&](const char *label, const char *method) {
+            if (sbusy) opt_disable_next();
+            if (opt_button(label, about)) {
+                pthread_mutex_lock(&g_lock);
+                g_save_busy = true, g_save_msg.clear();
+                pthread_mutex_unlock(&g_lock);
+                android_call(method);  // (then nativeSaveDone)
+            }
+        };
+        save("Export saves", "pickSaveExport");
+        save("Import saves", "pickSaveImport");
+        save("Import from folder", "pickSaveImportFolder");
+        note_row(msg, failed);
+    }
+
+    opt_section("DLC");
+    {
+        pthread_mutex_lock(&g_lock);
+        std::string msg = g_dlc_msg;
+        bool failed = g_dlc_failed, dbusy = g_dlc_busy;
+        pthread_mutex_unlock(&g_lock);
+        bool have = fs_aoc_image() != NULL;
+        const char *about = "The Expansion Pass - The Master Trials and The Champions' Ballad - for game versions 1.6.0, 1.8.2 and 1.9.0. "
+                            "Choose the folder with your own DLC's extracted romfs: the larger pack (01007EF00011F001, 7,094 files, "
+                            "about 1.4 GB) holds both; the other one is only the Ballad's unlock and isn't needed. The DLC isn't "
+                            "included with BOTWRecompAndroid.";
+        if (dbusy || g_busy) opt_disable_next();
+        if (opt_action(have ? "Install again" : "Install DLC", tr(have ? "Installed." : "Not installed."), about)) {
+            pthread_mutex_lock(&g_lock);
+            g_dlc_busy = true, g_dlc_msg.clear();
+            pthread_mutex_unlock(&g_lock);
+            android_call("pickDlcFolder");  // (then importDlc -> nativeBuildDlc -> nativeDlcDone)
+        }
+        if (have) {
+            if (dbusy || g_busy) opt_disable_next();
+            if (opt_button("Remove DLC", about)) {
+                remove_tree(dlc_dir());
+                pthread_mutex_lock(&g_lock);
+                g_dlc_msg = tr("DLC removed."), g_dlc_failed = false;
+                pthread_mutex_unlock(&g_lock);
+            }
+        }
+        float f = g_dlc_frac;
+        if (dbusy && f >= 0) {
+            char m[80];
+            snprintf(m, sizeof m, tr("Installing the DLC... %d%%"), (int)(f * 100));
+            note_row(m);
+        }
+        note_row(msg, failed);
+    }
+
+    opt_section("Game font");
+    {
+        import_fonts();
+        bool fs = have_font(FONT_STD, 4), fe = have_font(FONT_EXT, 2);
+        const char *about = "Fonts aren't included. For the original look, dump them from your own Switch and import: "
+                            "nintendo_udsg-r_std_003.bfttf (text) and nintendo_ext_003.bfttf (button icons). "
+                            ".ttf versions with the same names work too.";
+        static const SDL_DialogFileFilter font_f[] = {{"Switch fonts", "bfttf;ttf"}};
+        if (opt_action("Import fonts", tr(fs ? "Nintendo font (imported)" : "substitute (Hiragino Sans)"), about))
+            SDL_ShowOpenFileDialog(picked_fonts, NULL, g_launcher_win, font_f, 1, NULL, true);
+        if ((fs || fe) && opt_button("Use substitute font", about)) remove_fonts();
+        if (!g_font_msg.empty()) note_row(tr(g_font_msg.c_str()));
+    }
+
+    opt_section("Log file");
+    {
+        if (!g_log_folder_read) {
+            g_log_folder_read = true;
+            log_folder_read();
+        }
+        pthread_mutex_lock(&g_lock);
+        std::string folder = g_log_folder;
+        pthread_mutex_unlock(&g_lock);
+        const char *log_about = "Writes what the app reports (GPU, driver, errors) to botwrecomp-log.txt in a folder you choose (create "
+                                "one, e.g. Download/BOTWRecomp), to open on the phone and send with a bug report. Turn it on and play "
+                                "until the problem shows; after a crash, the run before is kept as botwrecomp-log-previous.txt.";
+        if (opt_toggle("Save a log file", &g_settings.log_file, false, log_about)) {
+            changed = true;
+            if (g_settings.log_file && folder.empty()) android_call("pickLogFolder");  // (then nativeLogFolderPicked)
+            else android_log_file(g_settings.log_file);
+        }
+        if (opt_action(folder.empty() ? "Choose folder" : "Change folder", folder.c_str(), log_about)) android_call("pickLogFolder");
+    }
+
+    opt_section("Credits");
+    {   // (S23) README.pt-BR.md's credits, and what this version is
+        opt_action("Original project", "mamcjr",
+                   "All of this app's base is BOTWRecompAndroid, by mamcjr (github.com/mamcjr/BOTWRecompAndroid). The credit for "
+                   "the project is entirely theirs.");
+        opt_action("Engine", "peiikai",
+                   "LAS Recomp, by peiikai (MIT license), the recompiler and runtime everything starts from, and "
+                   "LASRecompAndroid, by mamcjr, its Android port.");
+        opt_action("Other projects", "",
+                   "SavageWindRecomp, by Revivedx. LASRecomp-Android-Plus, by Nycolazs. The zeldaret/botw decompilation and "
+                   "open-ead/sead. AMD FSR 1, Snapdragon GSR and SMAA. "
+                   "libadrenotools. Mesa's Turnip driver, in The412Banner's builds.");
+        opt_action("Licenses", "",
+                   "This app's MIT license and the list of the other components' licenses are inside the APK, in "
+                   "assets/licenses, and in the source code.");
+        opt_action("About this version", "Unofficial",
+                   "An unofficial modification for the Samsung Galaxy S23, made with AI from one person's ideas. It isn't made "
+                   "or supported by the original authors, so please don't take its problems to them. Don't take it too "
+                   "seriously: if it doesn't work for you, just leave it and download the version you like best.");
+    }
+    if (changed) settings_save();
+    opt_end();
+}
+
+// (S23) The start screen's SAVED SETTINGS: everything in the settings file (every tab's options, the touch controls, the
+// mods) and the driver picked, in blocks to come back to after trying others. Inside the app, beside the versions'
+// folders: <1.0.0's data root>/settings_blocks/<n>.ini, and <n>.txt with its name, date and driver. Loading restarts
+// the app: part of the options is read at the start.
+#define SETTING_BLOCKS 8
+struct SettingBlock {
+    bool used;
+    std::string name, when, driver;
+};
+static SettingBlock g_blocks[SETTING_BLOCKS];
+// (S23) The start screen's recommended settings: what played well on the Galaxy S23 Ultra, with the driver for the phone.
+// Only these: the display, the sound, the controls and the mods stay as the player has them. Restarts the app, as a block.
+// lighter: for the Galaxy S23, S23+ and weaker phones, a smaller image for less heat. Not measured on those phones.
+static int g_rec_ask;  // 1 the S23 Ultra's, 2 the lighter ones
+static void recommended_apply(bool lighter) {
+    g_settings.fps_mode = 1;  // (30)
+    g_settings.event_fps_unlock = true;
+    g_settings.res_mode = lighter ? RES_Q75 : 1;
+    g_settings.out_lines = lighter ? 900 : 1080;
+    g_settings.upscaler = UPSCALE_SHARP;
+    g_settings.antialias = AA_OFF;
+    g_settings.shader_int32 = true;
+    g_settings.sync_lag = true;
+    g_settings.native_code = true;
+    g_settings.gpu_heap = g_settings.inplace_reads = g_settings.turnip_lrz = -1;  // (Automatic: on on the 740, as tested; safe on the others)
+    g_settings.gpu_turbo = false;
+    g_settings.present_fifo = true;
+    g_settings.panel_lock = true;
+    g_settings.shader_workers = 0;
+    g_settings.force_aniso = 0;
+    g_settings.turnip_mode = 0;
+    settings_save();
+    std::string d = driver_recommended();
+    if (!d.empty() && access((drivers_dir() + "/" + d).c_str(), F_OK) == 0) driver_set_active(d);
+    android_call("restartApp");
+}
+static int g_block_open = -1, g_block_ask;  // the block open (-1: the list); 1 replace it? 2 load it? 3 delete it?
+static char g_block_name[48];
+static std::string g_block_msg;
+static bool g_block_failed;
+
+static std::string blocks_dir() { return std::string(rt_main_root()) + "/settings_blocks"; }
+static std::string block_file(int i, const char *ext) { return blocks_dir() + "/" + std::to_string(i + 1) + ext; }
+static std::string block_title(int i) {
+    if (!g_blocks[i].name.empty()) return g_blocks[i].name;
+    char t[48];
+    snprintf(t, sizeof t, tr("Block %d"), i + 1);
+    return t;
+}
+static void blocks_read() {
+    for (int i = 0; i < SETTING_BLOCKS; i++) {
+        SettingBlock &b = g_blocks[i];
+        b = SettingBlock();
+        b.used = access(block_file(i, ".ini").c_str(), F_OK) == 0;
+        if (FILE *f = fopen(block_file(i, ".txt").c_str(), "r")) {
+            std::string *const lines[] = {&b.name, &b.when, &b.driver};
+            char l[256];
+            for (std::string *s : lines) {
+                if (!fgets(l, sizeof l, f)) break;
+                l[strcspn(l, "\r\n")] = 0;
+                *s = l;
+            }
+            fclose(f);
+        }
+    }
+}
+static bool block_info_save(int i) {
+    FILE *f = fopen(block_file(i, ".txt").c_str(), "w");
+    if (!f) return false;
+    const SettingBlock &b = g_blocks[i];
+    fprintf(f, "%s\n%s\n%s\n", b.name.c_str(), b.when.c_str(), b.driver.c_str());
+    return fclose(f) == 0;
+}
+static void block_say(const char *msg, bool failed) { g_block_msg = tr(msg), g_block_failed = failed; }
+static void block_save(int i) {
+    mkdir(blocks_dir().c_str(), 0770);
+    SettingBlock &b = g_blocks[i];
+    std::vector<std::string> files = driver_files();
+    std::string driver = driver_active();
+    if (driver.empty()) driver = files.empty() ? "-" : files[0];
+    char when[32];
+    time_t now = time(NULL);
+    strftime(when, sizeof when, "%d/%m/%Y %H:%M", localtime(&now));
+    if (!settings_export(block_file(i, ".ini").c_str())) return block_say("Couldn't save the settings here.", true);
+    b.used = true, b.when = when, b.driver = driver;
+    block_info_save(i);
+    block_say("Settings saved in this block.", false);
+}
+static bool block_driver_kept(const SettingBlock &b) {
+    return b.driver.empty() || b.driver == "-" || access((drivers_dir() + "/" + b.driver).c_str(), F_OK) == 0;
+}
+static void block_load(int i) {
+    const SettingBlock &b = g_blocks[i];
+    if (!settings_import(block_file(i, ".ini").c_str())) return block_say("Couldn't load this block.", true);
+    if (!b.driver.empty() && block_driver_kept(b)) driver_set_active(b.driver);
+    android_call("restartApp");  // (the next start reads them; nothing saves the old ones over them before that)
+}
+static void block_open(int i) {
+    g_block_open = i, g_block_ask = 0, g_block_msg.clear();
+    snprintf(g_block_name, sizeof g_block_name, "%s", g_blocks[i].name.c_str());
+    opt_focus_first(true);
+}
+static void block_close() {
+    g_block_open = -1, g_block_ask = 0, g_block_msg.clear();
+    opt_focus_first(true);
+}
+static void blocks_rows(float sc) {
+    opt_begin("##blocks", sc);
+    if (g_block_open < 0) {
+        opt_section("Recommended");
+        const char *rec = "The settings tested on the Galaxy S23 Ultra, with the driver for this phone: 30 fps, 1x resolution, 1080 lines, "
+                          "FSR 1 and native game code. Your screen shape, sound, controls, mods and game saves stay as they are. On "
+                          "another phone the result may differ.";
+        const char *light = "Lighter settings for the Galaxy S23, S23+ and weaker phones, with the driver for this phone: 30 fps, 75% "
+                            "resolution, 900 lines, FSR 1 and native game code. The image is softer. They weren't tested on those "
+                            "phones. Your screen shape, sound, controls, mods and game saves stay as they are.";
+        if (!g_rec_ask) {
+            if (opt_action("Use the recommended settings", "S23 Ultra", rec, false)) g_rec_ask = 1;
+            if (opt_action("Use the lighter settings", "S23, S23+ and weaker", light, false)) g_rec_ask = 2;
+        } else {
+            if (opt_button("Yes, apply and restart", g_rec_ask == 2 ? light : rec)) recommended_apply(g_rec_ask == 2);
+            if (opt_button("Cancel", "Keeps everything as it is.")) g_rec_ask = 0;
+        }
+        opt_section("Saved settings");
+        for (int i = 0; i < SETTING_BLOCKS; i++) {
+            const SettingBlock &b = g_blocks[i];
+            std::string label = block_title(i) + "##" + std::to_string(i), desc;
+            if (b.used) {
+                char d[300];
+                snprintf(d, sizeof d, tr("Saved on %s.\nDriver: %s"), b.when.c_str(),
+                         b.driver.empty() || b.driver == "-" ? tr("the system's") : driver_shown(b.driver).c_str());
+                desc = d;
+            } else {
+                desc = tr("Empty. Open it to keep all the current settings here: every tab's options, the touch controls, the "
+                          "mods and the driver. Your game saves aren't part of this.");
+            }
+            if (opt_action(label.c_str(), b.used ? b.when.c_str() : "Empty", desc.c_str(), false)) block_open(i);
+        }
+    } else {
+        int i = g_block_open;
+        SettingBlock &b = g_blocks[i];
+        opt_section(block_title(i).c_str());
+        std::string load_d = tr("Puts these settings back and restarts the app. What is set now is lost, unless you save it in "
+                                "another block first.");
+        if (!block_driver_kept(b)) {
+            char d[200];
+            snprintf(d, sizeof d, tr("\n\nIts driver, %s, isn't on the list any more: the one chosen now stays."), driver_shown(b.driver).c_str());
+            load_d += d;
+        }
+        static const char *const yes[] = {"Yes, replace it", "Yes, load and restart", "Yes, delete it"};
+        const char *const ask[] = {"This block's settings are replaced by the current ones.", load_d.c_str(),
+                                   "This block is deleted. The current settings stay as they are."};
+        if (!g_block_ask) {
+            if (opt_button("Save the current settings here",
+                           "Keeps everything set now: every tab's options, the touch controls, the mods and the driver. Your "
+                           "game saves aren't part of this.")) {
+                if (b.used) g_block_ask = 1;
+                else block_save(i);
+            }
+            if (b.used) {
+                if (opt_button("Load this block", load_d.c_str())) g_block_ask = 2;
+                if (opt_text("Name", g_block_name, sizeof g_block_name, block_title(i).c_str(), "A name to tell this block from the others.")) {
+                    b.name = g_block_name;
+                    b.name.erase(std::remove_if(b.name.begin(), b.name.end(), [](char c) { return c == '#' || c == '%'; }), b.name.end());
+                    block_info_save(i);
+                }
+                if (opt_button("Delete this block", "Deletes only this block.")) g_block_ask = 3;
+            }
+        } else {
+            if (opt_button(yes[g_block_ask - 1], ask[g_block_ask - 1])) {
+                int what = g_block_ask;
+                g_block_ask = 0;
+                if (what == 1) block_save(i);
+                else if (what == 2) block_load(i);
+                else {
+                    remove(block_file(i, ".ini").c_str());
+                    remove(block_file(i, ".txt").c_str());
+                    blocks_read();
+                    block_close();
+                }
+            }
+            if (opt_button("Cancel", "Keeps everything as it is.")) g_block_ask = 0;
+        }
+        note_row(g_block_msg, g_block_failed);
+    }
+    opt_end();
+}
+// one step back: from the question, from the block, and true when already on the list
+static bool blocks_back() {
+    if (g_rec_ask) { g_rec_ask = false; return false; }
+    if (g_block_ask) g_block_ask = 0;
+    else if (g_block_open >= 0) block_close();
+    else return true;
+    return false;
+}
+#endif
+
 static void prelaunch_tab(float sc) {
+#ifdef __ANDROID__
+    prelaunch_rows(sc);
+    return;
+#endif
     const ImVec4 gold(0.93f, 0.76f, 0.33f, 1);
     auto heading = [&](const char *t) {
 #ifdef __ANDROID__  // (the Zonai look of the menu's pages)
@@ -1959,6 +2513,19 @@ extern "C" void launcher_run(const char *root) {
                     if (g_refocus == SETUP) ImGui::SetKeyboardFocusHere(), g_refocus = MAIN;
                     if (menu_item("SET UP GAME FILES", !busy)) page = SETUP;
                 }
+#ifdef __ANDROID__
+                else {  // (S23: what SET UP GAME FILES's place holds once the game is set up)
+                    ImGui::SetCursorPosX(x0);
+                    if (g_refocus == BLOCKS) ImGui::SetKeyboardFocusHere(), g_refocus = MAIN;
+                    if (menu_item("SAVED SETTINGS", true)) {
+                        blocks_read();
+                        g_block_open = -1, g_block_ask = 0, g_block_msg.clear();
+                        g_rec_ask = false;
+                        opt_focus_first(true);
+                        page = BLOCKS;
+                    }
+                }
+#endif
                 ImGui::SetCursorPosX(x0);
                 if (menu_item("QUIT", true)) exit(0);
                 g_menu_gap = 0.35f;
@@ -2024,6 +2591,44 @@ extern "C" void launcher_run(const char *root) {
                     settings_save();
                     page = MAIN, g_refocus = SETTINGS;
                 }
+#ifdef __ANDROID__
+            } else if (page == BLOCKS) {
+                // in a window like Settings, the same text size
+                extern float menu_ui_scale();
+                extern bool menu_back_button(float scale);
+                float sc = ds.y / 1080.0f, w = ds.x * 0.94f, h = ds.y - 2 * 18 * sc;
+                ImGui::GetWindowDrawList()->AddRectFilled(ImGui::GetWindowPos(), ImVec2(ImGui::GetWindowPos().x + ds.x,
+                                                          ImGui::GetWindowPos().y + ds.y), IM_COL32(0, 0, 0, 110));
+                ImVec2 wp = ImGui::GetWindowPos();
+                ImGui::SetCursorScreenPos(ImVec2(wp.x + (ds.x - w) * 0.5f, wp.y + (ds.y - h) * 0.5f));
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.035f, 0.065f, 0.075f, 0.94f));
+                ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6 * sc);
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(28 * sc, 24 * sc));
+                ImGui::BeginChild("##blockspage", ImVec2(w, h), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NavFlattened);
+                ImGui::PopStyleVar(2);
+                ImGui::PopStyleColor();
+                ImGui::PushFont(g_font_small);
+                ImGuiIO &bio = ImGui::GetIO();
+                float font_base = bio.FontGlobalScale, k = menu_ui_scale();
+                bio.FontGlobalScale = font_base * k;
+                ImGui::PushFont(ImGui::GetFont());
+                float bh = fmaxf(1, ImGui::GetContentRegionAvail().y - 84 * sc * k);
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
+                ImGui::BeginChild("##blockrows", ImVec2(0, bh), ImGuiChildFlags_None);
+                ImGui::PopStyleColor();
+                ui_touch_scroll();
+                blocks_rows(sc * k);
+                ImGui::EndChild();
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 8 * sc * k);
+                bool back = menu_back_button(sc * k);
+                if (!typing && (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
+                    back = true;
+                bio.FontGlobalScale = font_base;
+                ImGui::PopFont();
+                ImGui::PopFont();
+                ImGui::EndChild();
+                if (back && blocks_back()) page = MAIN, g_refocus = BLOCKS;
+#endif
             } else {
                 // SETUP: the game files, in a window like Settings (option rows: runtime/ui/option_rows.h) - choose the
                 // folder with the game files, set up; once set up, delete. Each row's explanation on the right.
@@ -2288,6 +2893,14 @@ extern "C" void launcher_run(const char *root) {
                 float vs = fs * 1.4f, y = ImGui::GetWindowPos().y + ds.y - 134 * s;
                 ImVec2 vsz = font->CalcTextSizeA(vs, FLT_MAX, 0, ver.c_str());
                 text(ImVec2(right - vsz.x, y), vs, IM_COL32(255, 255, 255, 255), ver.c_str(), false);
+#ifdef __ANDROID__
+                {   // (S23) whose project this is: more in Settings > Files > Credits
+                    const char *credit = tr("Unofficial modification of BOTWRecompAndroid, by mamcjr");
+                    float cs = fs * 0.8f;
+                    ImVec2 csz = font->CalcTextSizeA(cs, FLT_MAX, 0, credit);
+                    text(ImVec2(right - csz.x, y - csz.y - 6 * s), cs, IM_COL32(225, 230, 245, 255), credit, false);
+                }
+#endif
                 pthread_mutex_lock(&g_update_lock);
                 std::string upd = g_update_tag;
                 pthread_mutex_unlock(&g_update_lock);

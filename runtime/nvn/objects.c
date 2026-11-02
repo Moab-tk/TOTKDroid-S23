@@ -1834,6 +1834,9 @@ uint32_t rt_dynres_tier(uint64_t ctl, uint32_t cur, uint32_t want) {
             next > now ? "taken" : "kept");
     return next > now ? want : cur;
 }
+// (S23) the paced frame's time on the grid (CLOCK_MONOTONIC ns; 0: none): vulkan/device.c backend_present takes it with
+// that frame, so it can't reach another one on the render thread
+uint64_t g_present_grid_ns;
 
 #ifdef __ANDROID__
 int g_present_interval = 1;  // the game's latest (1: 60 fps, 2: 30 fps): the frame pacer (vulkan/exec.c)
@@ -1931,6 +1934,7 @@ NVN(nvnQueuePresentTexture) {
             g_blocked_ns += t1 - t0;
             last = last && t1 < target + period ? target : t1;
             framepace_presented(last, last == target);
+            __atomic_store_n(&g_present_grid_ns, last, __ATOMIC_RELAXED);
         } else if (on) {
             uint64_t want = last_vs + (uint64_t)n, t0 = plat_now_ns();
 #ifdef __ANDROID__

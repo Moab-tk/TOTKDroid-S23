@@ -26,6 +26,9 @@
 void vk_device_fault_report(void);
 #ifdef __ANDROID__
 void vk_android_load(void);  // android_driver.c: the Vulkan driver (adrenotools / system) into volk
+void vk_gpu_turbo(bool front);
+void vk_gpu_turbo_off_now(void);
+void vk_gpu_turbo_start(void);
 const char *vk_driver_rejected(void);  // (the chosen driver package the system's stood in for; "" none)
 void vk_wait_ready(void);    // device.c: until the device exists (the window's thread makes it)
 void vk_vamm_before_map(uint64_t addr, uint64_t size);
@@ -58,6 +61,7 @@ typedef struct {
                                   // pipeline state (exec.c PipeKey.prim_restart)
 #ifdef __ANDROID__
     bool map_placed;              // VK_EXT_map_memory_placed: the guest heap mapped as GPU memory (exec.c vk_heap_place)
+    bool display_timing;          // VK_GOOGLE_display_timing: each present says when to show it (device.c vk_frame_end)
     uint64_t placed_align;
     bool bda;                     // bufferDeviceAddress on: the placed heap can be reached by pointer (exec.c gmem_bda)
     bool exec_stats;              // (Android, LARECOMP_SHADER_STATS=1) the compiler's statistics of each pipeline, logged

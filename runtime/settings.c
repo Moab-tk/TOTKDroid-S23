@@ -23,6 +23,7 @@ static const char *settings_file(void) {
 
 Settings g_settings = {
     .aspect = ASPECT_UNLOCKED,
+    .ui_size = 1,
     .fullscreen = false,
     .volume = 1.0f,
     .reverb = true,
@@ -55,6 +56,8 @@ Settings g_settings = {
                                 // frame overlaps the render thread and the GPU: +16.9% in TOTK, 22.0 -> 25.7 fps on the POCO
                                 // F7 Ultra, Great Sky Island, LARECOMP_AB=120:synclag in one launch, 2026-10-30; it starts
                                 // 300 frames after each load. BOTW saw Link's legs sink with it: to check in TOTK's play)
+    .panel_lock = true,         // (S23: vulkan/device.c steady_frames)
+    .present_fifo = true,       // (FIFO was this app's only mode: device.c present_mode)
     .out_lines = OUT_AUTO,      // (POCO F7 Ultra, 3200x1440, 1.8.2's Great Plateau: GPU 22.8 ms a frame at the screen's,
                                 // 18.6 at 1080 lines with a larger scene - the final image's passes over 2.2x the pixels)
 #else
@@ -195,6 +198,13 @@ void settings_reset_defaults(void) {
     g_settings.fps_mode = d->fps_mode;
     g_settings.shader_int32 = d->shader_int32;
     g_settings.sync_lag = d->sync_lag;
+    g_settings.ui_size = d->ui_size;
+    g_settings.gpu_turbo = d->gpu_turbo;
+    g_settings.present_fifo = d->present_fifo;
+    g_settings.panel_lock = d->panel_lock;
+    g_settings.shader_workers = d->shader_workers;
+    g_settings.force_aniso = d->force_aniso;
+    g_settings.turnip_mode = d->turnip_mode;
     g_settings.files_in_place = d->files_in_place;
     g_settings.native_code = d->native_code;
 #endif
@@ -238,6 +248,13 @@ void settings_load(void) {
         else if (!strcmp(key, "frame_rate")) g_settings.fps_mode = !strcmp(val, "30") ? 1 : !strcmp(val, "60") ? 2 : 0;
         else if (!strcmp(key, "shader_int32")) g_settings.shader_int32 = atoi(val) != 0;
         else if (!strcmp(key, "sync_lag")) g_settings.sync_lag = atoi(val) != 0;
+        else if (!strcmp(key, "ui_size")) g_settings.ui_size = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);
+        else if (!strcmp(key, "gpu_turbo")) g_settings.gpu_turbo = atoi(val) != 0;
+        else if (!strcmp(key, "present_fifo")) g_settings.present_fifo = atoi(val) != 0;
+        else if (!strcmp(key, "panel_lock")) g_settings.panel_lock = atoi(val) != 0;
+        else if (!strcmp(key, "shader_workers")) g_settings.shader_workers = atoi(val) < 0 ? 0 : atoi(val) > 6 ? 6 : atoi(val);
+        else if (!strcmp(key, "force_aniso")) g_settings.force_aniso = atoi(val) < 0 ? 0 : atoi(val) > 5 ? 5 : atoi(val);
+        else if (!strcmp(key, "turnip_mode")) g_settings.turnip_mode = atoi(val) < 0 ? 0 : atoi(val) > 3 ? 3 : atoi(val);
         else if (!strcmp(key, "files_in_place")) g_settings.files_in_place = atoi(val) != 0;
         else if (!strcmp(key, "native_code")) g_settings.native_code = atoi(val) != 0;
         else if (!strcmp(key, "gpu_heap")) g_settings.gpu_heap = !strcmp(val, "auto") ? -1 : atoi(val) != 0;
@@ -301,6 +318,25 @@ void settings_load(void) {
     LOG("[settings] loaded %s\n", SETTINGS_FILE);
 }
 
+static bool copy_whole(const char *from, const char *to) {
+    FILE *in = fopen(from, "rb");
+    if (!in) return false;
+    FILE *out = fopen(to, "wb");
+    bool ok = out != NULL;
+    char buf[4096];
+    for (size_t n; ok && (n = fread(buf, 1, sizeof buf, in)) > 0;) ok = fwrite(buf, 1, n, out) == n;
+    fclose(in);
+    if (out) ok &= fclose(out) == 0;
+    return ok;
+}
+
+bool settings_export(const char *path) {
+    settings_save();
+    return copy_whole(SETTINGS_FILE, path);
+}
+
+bool settings_import(const char *path) { return copy_whole(path, SETTINGS_FILE); }
+
 void settings_save(void) {
     FILE *f = fopen(SETTINGS_FILE, "w");
     if (!f) { LOG("[settings] cannot write %s\n", SETTINGS_FILE); return; }
@@ -321,6 +357,9 @@ void settings_save(void) {
     fprintf(f, "frame_rate = %s\n", g_settings.fps_mode == 1 ? "30" : g_settings.fps_mode == 2 ? "60" : "auto");
     fprintf(f, "shader_int32 = %d\nsync_lag = %d\nfiles_in_place = %d\nnative_code = %d\n", g_settings.shader_int32,
             g_settings.sync_lag, g_settings.files_in_place, g_settings.native_code);
+    fprintf(f, "ui_size = %d\n", g_settings.ui_size);
+    fprintf(f, "gpu_turbo = %d\npresent_fifo = %d\npanel_lock = %d\nshader_workers = %d\nforce_aniso = %d\nturnip_mode = %d\n", g_settings.gpu_turbo,
+            g_settings.present_fifo, g_settings.panel_lock, g_settings.shader_workers, g_settings.force_aniso, g_settings.turnip_mode);
     static const char *const tri[] = {"auto", "0", "1"};  // (-1 / 0 / 1)
 #define TRI(v) tri[(v) < 0 ? 0 : (v) ? 2 : 1]
     fprintf(f, "gpu_heap = %s\ninplace_reads = %s\nturnip_lrz = %s\nlog_file = %d\ngpu_model = %s\n", TRI(g_settings.gpu_heap),

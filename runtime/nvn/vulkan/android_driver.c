@@ -4,11 +4,51 @@
 // system driver. volk then takes every Vulkan function from it (device.c: volkLoadInstance / volkLoadDevice).
 #include <adrenotools/driver.h>
 #include <dlfcn.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
+#include "../../settings.h"
 #include "vk.h"
+
+// (S23) Settings > Video > Tests: the GPU doesn't rest between frames (adrenotools_set_turbo, Eden's "force max clock").
+// The state is the kernel's, for the whole phone: it outlives the app. So it follows the app being in front (onPause /
+// onResume), goes off on the way out and in the crash handler, and every start clears what a killed run left. The same
+// call as adrenotools', for the kernel's answer; open / ioctl / close only: safe in a signal handler.
+static int turbo_ioctl(bool on) {
+    struct { unsigned type; void *value; size_t sizebytes; } prop;
+    unsigned enable = on ? 0 : 1;
+    prop.type = 0xE, prop.value = &enable, prop.sizebytes = sizeof enable;  // (KGSL_PROP_PWRCTRL)
+    int fd = open("/dev/kgsl-3d0", O_RDWR | O_CLOEXEC);
+    if (fd < 0) return errno;
+    int r = ioctl(fd, _IOW(0x09, 0x32, prop), &prop) < 0 ? errno : 0;  // (IOCTL_KGSL_SETPROPERTY)
+    close(fd);
+    return r;
+}
+
+static atomic_bool g_turbo;
+void vk_gpu_turbo_off_now(void) {
+    if (atomic_exchange(&g_turbo, false)) turbo_ioctl(false);
+}
+
+void vk_gpu_turbo(bool front) {
+    bool on = front && g_settings.gpu_turbo;
+    if (on == atomic_exchange(&g_turbo, on)) return;
+    int err = turbo_ioctl(on);
+    LOG("[vk] GPU kept awake: %s (%s)\n", on ? "on" : "off", err ? strerror(err) : "ok");
+}
+
+void vk_gpu_turbo_start(void) {
+    atomic_store(&g_turbo, false);
+    turbo_ioctl(false);
+    atexit(vk_gpu_turbo_off_now);
+    vk_gpu_turbo(true);
+}
 
 // Does this driver offer a Vulkan GPU at all? (Turnip v26.0.0 R8, built for the A7xx: none on an Adreno 830 - the app
 // stopped at "no Vulkan device" on every start, its settings out of reach.) 1.1 and up: below 1.3 device.c checks the

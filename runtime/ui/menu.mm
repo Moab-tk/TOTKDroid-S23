@@ -328,7 +328,7 @@ static void style_init(void) {
     c[ImGuiCol_ChildBg] = ImVec4(0.09f, 0.13f, 0.11f, 0.85f);
     c[ImGuiCol_PopupBg] = ImVec4(0.07f, 0.10f, 0.09f, 0.98f);
     c[ImGuiCol_Text] = ImVec4(0.96f, 0.94f, 0.88f, 1);
-    c[ImGuiCol_TextDisabled] = ImVec4(0.62f, 0.64f, 0.58f, 1);
+    c[ImGuiCol_TextDisabled] = ImVec4(0.76f, 0.77f, 0.72f, 1);  // (S23: the small print, easier to read)
     c[ImGuiCol_FrameBg] = ImVec4(0.13f, 0.19f, 0.16f, 1);
     c[ImGuiCol_FrameBgHovered] = green;
     c[ImGuiCol_FrameBgActive] = ImVec4(0.19f, 0.45f, 0.31f, 1);
@@ -513,10 +513,18 @@ extern "C" void renderer_get_scale(float *sx, float *sy);        // (the final i
 extern "C" int input_pad_family(void);  // runtime/hle/input.c
 extern "C" double output_scale_dynamic_factor(void);
 
-static void tab_display(void) {
+#ifdef __ANDROID__
+void launcher_video_options(void);  // (ui/launcher.mm)
+#endif
+
+static void tab_display(bool in_game) {
     float scale = ImGui::GetFontSize() / 34;
     opt_begin("##video", scale);
     opt_section("Display");
+    const char *ui_sizes[] = {"Normal", "Large", "Extra large"};
+    if (opt_choice("Interface size", &g_settings.ui_size, ui_sizes, 3, 1,
+                   "The size of the text and buttons on these pages. Long names slide by themselves when they don't fit."))
+        settings_save();
     const char *aspects[] = {"Unlocked", "Original 16:9"};
     opt_choice("Aspect ratio", &g_settings.aspect, aspects, 2, ASPECT_UNLOCKED,
                "Unlocked: the view will fill wider screens once the game's cameras are widened - not done yet for this "
@@ -660,6 +668,7 @@ static void tab_display(void) {
                "Translates the game's shaders with 32-bit address math, the path used for drivers without 64-bit "
                "integers (Adreno 6xx / 7xx and Mali stock drivers). Try it if lighting, grass or text are missing or wrong "
                "on your GPU. Applies to shaders translated from now on: restart the app for all of them.");
+    if (!in_game) launcher_video_options();  // (they restart the app or apply at the next start)
 #endif
     opt_end();
 }
@@ -961,7 +970,7 @@ static bool zonai_button(const char *label, ImVec2 size, int icon, float scale) 
 static void settings_page(int id, float scale, bool in_game, void (*prelaunch)(float)) {
     switch (id) {
     case -1: prelaunch(scale); break;
-    case 0: tab_display(); break;
+    case 0: tab_display(in_game); break;
     case 1: tab_audio(); break;
     case 8: tab_about(); break;
     case 9: tab_quit(scale, in_game); break;
@@ -976,7 +985,27 @@ static bool g_touch_settings_back;
 extern "C" bool menu_settings_back_requested() { bool back = g_touch_settings_back; g_touch_settings_back = false; return back; }
 #endif
 
+static void tabs_body_sized(float scale, bool in_game, void (*prelaunch)(float));
+// (S23) Settings > Video > Interface size: every page's text, and its rows and buttons with it (they go by the font)
+extern "C" float menu_ui_scale() {
+    static const float sizes[] = {1.0f, 1.3f, 1.6f};
+    int u = g_settings.ui_size;
+    return sizes[u < 0 ? 0 : u > 2 ? 2 : u];
+}
+extern "C" bool menu_back_button(float scale) { return sheikah_button("Back", ImVec2(250 * scale, 62 * scale), 0, scale); }
+
 static void tabs_body(float scale, bool in_game, void (*prelaunch)(float)) {
+    float k = menu_ui_scale();
+    ImGuiIO &io = ImGui::GetIO();
+    float base = io.FontGlobalScale;
+    io.FontGlobalScale = base * k;
+    ImGui::PushFont(ImGui::GetFont());  // (the new size takes effect when a font is set)
+    tabs_body_sized(scale * k, in_game, prelaunch);
+    io.FontGlobalScale = base;
+    ImGui::PopFont();
+}
+
+static void tabs_body_sized(float scale, bool in_game, void (*prelaunch)(float)) {
     // (id: the page; -1 = Prelaunch)
     struct Tab { const char *name; int id; bool on; };
     Tab tabs[10];
@@ -1019,6 +1048,9 @@ static void tabs_body(float scale, bool in_game, void (*prelaunch)(float)) {
                      22 * scale, 2.5f * scale);
     ui_zonai_frame(wdl, ImVec2(wp.x + 11 * scale, wp.y + 11 * scale), ImVec2(wp.x + ws.x - 11 * scale, wp.y + ws.y - 11 * scale),
                      IM_COL32(186, 157, 97, 60), 17 * scale, 1);
+#ifdef __ANDROID__
+    ImGui::Dummy(ImVec2(0, 8 * scale));  // (S23: no title, the height goes to the options: the tabs say where you are)
+#else
     {   // the spiral, the title between two lines with diamonds
         float cx = wp.x + ws.x * 0.5f, ey = wp.y + 26 * scale;
         ui_zonai_spiral(wdl, ImVec2(cx, ey), 15 * scale, jade, 2 * scale);
@@ -1045,6 +1077,7 @@ static void tabs_body(float scale, bool in_game, void (*prelaunch)(float)) {
         }
         ImGui::Dummy(ImVec2(0, ty + tsz + 8 * scale - ImGui::GetCursorScreenPos().y));
     }
+#endif
     {   // the tabs: centred when they fit, else scrolled sideways
         float th = 64 * scale, fs = ImGui::GetFontSize(), tab_w[16], total = 0;
         char ups[16][48];

@@ -31,6 +31,7 @@
 #include "../platform.h"
 #include "../rt.h"
 #include "../../android/common/guest_window.h"
+#include "crash_file.h"
 
 uint64_t g_guest_lo;  // the window's start (rt.h GUEST_LO), set by plat_reserve_guest before main()
 
@@ -487,6 +488,19 @@ static void crash_handler(int sig, siginfo_t *si, void *ctx) {
                 si->si_code == SEGV_ACCERR ? "no access" : si->si_code == SEGV_MAPERR ? "not mapped" : "other", g_fault_wnr,
                 st, (unsigned long long)odd);
     }
+    {
+        extern void vk_gpu_turbo_off_now(void);
+        vk_gpu_turbo_off_now();  // (the kernel keeps it after the app: android_driver.c)
+    }
+    {   // (S23) first, before anything else can go wrong: <data root>/botwrecomp-crash.txt (crash_file.h)
+        static atomic_int written;
+        if (!atomic_exchange(&written, 1)) {
+            char path[1100];
+            snprintf(path, sizeof path, "%s/botwrecomp-crash.txt", rt_data_root());
+            crash_file_write(path, sig, si->si_code, fa, pc, lr, uc->uc_mcontext.sp, uc->uc_mcontext.regs[29],
+                             (const uint64_t *)uc->uc_mcontext.regs, 31);
+        }
+    }
     char what[32];
     snprintf(what, sizeof what, "signal %d", sig);
     if (pc >= GUEST_LO && pc < GUEST_HI) {  // (the game's own code on the CPU: its registers are the signal's, not the Cpu's)
@@ -556,7 +570,16 @@ static int rm_entry(const char *path, const struct stat *sb, int flag, struct FT
 }
 bool plat_remove_tree(const char *dir) { return nftw(dir, rm_entry, 16, FTW_DEPTH | FTW_PHYS) == 0; }
 
-void plat_terminate(void) { _exit(0); }
+void plat_terminate(void) {
+    extern void vk_gpu_turbo_off_now(void);
+    vk_gpu_turbo_off_now();
+    _exit(0);
+}
+
+JNIEXPORT void JNICALL Java_com_botwrecompandroid_BOTWRecompAndroidActivity_nativeGpuTurbo(JNIEnv *env, jclass cls, jboolean front) {
+    extern void vk_gpu_turbo(bool front);
+    vk_gpu_turbo(front);
+}
 
 // ---- device state for the performance overlay (runtime/ui/perf_overlay.mm)
 #include <dirent.h>

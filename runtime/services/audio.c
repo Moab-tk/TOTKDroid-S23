@@ -1287,6 +1287,25 @@ static void request_update(Renderer *r, IpcReq *req, IpcResp *resp) {
     (void)resp;
 }
 
+// (S23) On the first run after an install the low-latency stream opens and then fails to start
+// (AAUDIO_ERROR_DISCONNECTED, an MMAP error from the audio driver), and one try meant a session without sound. It tries
+// again, and then without low latency.
+static SDL_AudioStream *open_output(const SDL_AudioSpec *spec, const char *who) {
+    for (int i = 0; i < 6; i++) {
+        SDL_AudioStream *st = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, spec, NULL, NULL);
+        if (st) {
+            if (i) LOG("[%s] audio open worked on try %d\n", who, i + 1);
+            return st;
+        }
+        LOG("[%s] SDL audio open failed (try %d): %s\n", who, i + 1, SDL_GetError());
+#ifdef __ANDROID__
+        if (i == 2) SDL_SetHint(SDL_HINT_ANDROID_LOW_LATENCY_AUDIO, "0");
+#endif
+        SDL_Delay(200);
+    }
+    return NULL;
+}
+
 static void renderer_open_output(Renderer *r) {
     if (getenv("LARECOMP_AUDIO_WAV")) {
         r->wav = fopen(getenv("LARECOMP_AUDIO_WAV"), "wb");
@@ -1295,8 +1314,8 @@ static void renderer_open_output(Renderer *r) {
     if (getenv("LARECOMP_NO_AUDIO") && strcmp(getenv("LARECOMP_NO_AUDIO"), "0")) return;
     if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) { LOG("[audren] SDL audio init failed: %s\n", SDL_GetError()); return; }
     SDL_AudioSpec spec = {SDL_AUDIO_F32, 2, (int)r->sample_rate};
-    r->stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
-    if (!r->stream) { LOG("[audren] SDL audio open failed: %s\n", SDL_GetError()); return; }
+    r->stream = open_output(&spec, "audren");
+    if (!r->stream) return;
     if (getenv("LARECOMP_AUDIO_GAIN")) SDL_SetAudioStreamGain(r->stream, (float)atof(getenv("LARECOMP_AUDIO_GAIN")));
     SDL_ResumeAudioStreamDevice(r->stream);
 }
@@ -1621,7 +1640,7 @@ SERVICE("audout:u", audout_u) {
         if (getenv("LARECOMP_AUDOUT_WAV")) a->wav = fopen(getenv("LARECOMP_AUDOUT_WAV"), "wb");
         if (!(getenv("LARECOMP_NO_AUDIO") && strcmp(getenv("LARECOMP_NO_AUDIO"), "0")) && SDL_InitSubSystem(SDL_INIT_AUDIO)) {
             SDL_AudioSpec spec = {SDL_AUDIO_S16, (int)a->channels, (int)a->rate};
-            a->stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
+            a->stream = open_output(&spec, "audout");
             if (a->stream) {
                 if (getenv("LARECOMP_AUDIO_GAIN")) SDL_SetAudioStreamGain(a->stream, (float)atof(getenv("LARECOMP_AUDIO_GAIN")));
                 SDL_ResumeAudioStreamDevice(a->stream);

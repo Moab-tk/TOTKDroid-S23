@@ -535,6 +535,15 @@ static void create_device(void) {
     if (fault) ext[n_ext++] = VK_EXT_DEVICE_FAULT_EXTENSION_NAME;
     g_fault_ext = fault;
 #ifdef __ANDROID__
+    // (S23) each frame shown on the pace's grid instead of at the first refresh after the GPU finished it (vk_frame_end;
+    // added before the map extensions: they must stay the last two). LARECOMP_PRESENT_TIMING=0: off.
+    {
+        const char *e = getenv("LARECOMP_PRESENT_TIMING");
+        g_vk.display_timing = (!e || atoi(e)) && has_ext(ep, ne, VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME);
+        if (g_vk.display_timing) ext[n_ext++] = VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME;
+        LOG("[vk] present timing %s\n", g_vk.display_timing ? "on (VK_GOOGLE_display_timing)"
+                                        : e && !atoi(e) ? "off (LARECOMP_PRESENT_TIMING=0)" : "off: the driver lacks it");
+    }
     // LARECOMP_SHADER_STATS=1: each graphics pipeline's compiled shaders described in the log (registers, waves,
     // spills, instructions: exec.c build_pipeline), for finding what makes a translated shader slow on this GPU
     g_vk.exec_stats = getenv("LARECOMP_SHADER_STATS") &&
@@ -897,7 +906,7 @@ static VkPresentModeKHR present_mode(void) {
     // not the game's thread (vulkan/async.c).
     const char *e = getenv("LARECOMP_VK_PRESENT");
 #ifdef __ANDROID__
-    if (!e) e = "fifo";
+    if (!e && g_settings.present_fifo) e = "fifo";  // (S23: Settings > Video > Tests)
 #endif
     VkPresentModeKHR want = !e || !strcmp(e, "mailbox") ? VK_PRESENT_MODE_MAILBOX_KHR
                           : !strcmp(e, "immediate") ? VK_PRESENT_MODE_IMMEDIATE_KHR : VK_PRESENT_MODE_FIFO_KHR;
@@ -1009,6 +1018,7 @@ static void recreate_swapchain(void) {
 // skipped. Before this, everything after a trip to the background stayed black (every acquire: SURFACE_LOST).
 static struct ANativeWindow *surface_aw;  // the window g_vk.surface was made for
 static bool surface_lost;
+static struct ANativeWindow *rate_aw;     // the window android_set_frame_rate told Android about
 
 static struct ANativeWindow *android_window(void) {
     return SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, NULL);
@@ -1018,6 +1028,64 @@ static void android_create_surface(struct ANativeWindow *aw) {
     VkAndroidSurfaceCreateInfoKHR si = {.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR, .window = aw};
     VK_CHECK(vkCreateAndroidSurfaceKHR(g_vk.inst, &si, NULL, &g_vk.surface));
     surface_aw = aw;
+    rate_aw = NULL;  // (Android can hand a new window at the old one's address: ask again)
+}
+
+// (S23) The window's frame rate told to Android (the pace's: 30 or 60). A test, off by default: with it the Galaxy S23
+// Ultra showed frames at exactly 33.3 or 66.7 ms - measured with the CPU and GPU underclocked by hand (2026-10-30), so
+// what it costs a normal phone is not known yet. LARECOMP_SET_FRAME_RATE=1: on.
+// LARECOMP_PANEL_HZ=<n>: the screen's refresh asked for instead. Left alone at 30 fps Android runs the panel at 30 Hz,
+// where a frame that misses a refresh waits a whole 33 ms and the next one replaces it.
+#include <android/native_window.h>
+extern int framepace_target(void);
+
+// (S23) Settings > Video > Steady frames at 30 FPS: the panel at 60 Hz, frames held to its refreshes (present_lock).
+// Galaxy S23 Ultra, 5 minutes playing: frames shown on time 96% (the screen left alone: 93%, with one dropped a second)
+static bool steady_frames(void) {
+    return g_settings.panel_lock && g_settings.fps_mode == 1 && framepace_target() == 30;
+}
+
+static void android_set_frame_rate(void) {
+    static int on = -1, panel = -1;
+    if (on < 0) on = getenv("LARECOMP_SET_FRAME_RATE") && atoi(getenv("LARECOMP_SET_FRAME_RATE"));
+    if (panel < 0) panel = getenv("LARECOMP_PANEL_HZ") ? atoi(getenv("LARECOMP_PANEL_HZ")) : 0;
+    int hz = panel > 0 ? panel : steady_frames() ? 60 : 0;
+    if ((!on && hz <= 0) || !surface_aw || android_window() != surface_aw) return;  // (the window it was made for, still alive)
+    static int set_fps = -1;
+    int fps = hz > 0 ? hz : framepace_target();
+    if (surface_aw == rate_aw && fps == set_fps) return;
+    rate_aw = surface_aw, set_fps = fps;
+    int r = ANativeWindow_setFrameRate(surface_aw, fps > 0 ? (float)fps : 0.0f,
+                                       hz > 0 ? ANATIVEWINDOW_FRAME_RATE_COMPATIBILITY_DEFAULT
+                                              : ANATIVEWINDOW_FRAME_RATE_COMPATIBILITY_FIXED_SOURCE);
+    LOG("[vk] window frame rate %d fps told to Android (%d)\n", fps, r);
+}
+
+// (S23) LARECOMP_LOG_PRESENT=1: every 300 presents, how the asked-for times went - what picks the delay in
+// LARECOMP_PRESENT_DELAY_MS from measurements (late: shown over 1 ms after the time asked for)
+static void present_timing_log(void) {
+    static int on = -1;
+    if (on < 0) on = getenv("LARECOMP_LOG_PRESENT") != NULL;
+    static uint32_t n;
+    if (!on || ++n % 300) return;
+    VkPastPresentationTimingGOOGLE p[128];
+    uint32_t c = 128;
+    VkResult r = vkGetPastPresentationTimingGOOGLE(g_vk.dev, g_vk.swapchain, &c, p);
+    if ((r != VK_SUCCESS && r != VK_INCOMPLETE) || !c) {
+        LOG("[present] no past timings (%d, %u)\n", r, c);
+        return;
+    }
+    uint32_t late = 0;
+    double sum = 0, worst = 0, margin = 0;
+    for (uint32_t i = 0; i < c; i++) {
+        double d = ((double)p[i].actualPresentTime - (double)p[i].desiredPresentTime) / 1e6;
+        late += d > 1;
+        sum += d;
+        if (d > worst) worst = d;
+        margin += p[i].presentMargin / 1e6;
+    }
+    LOG("[present] last %u frames: %u late, shown %.1f ms after the time asked for (worst %.1f), margin %.1f ms\n", c, late,
+        sum / c, worst, margin / c);
 }
 
 static bool android_surface_ready(void) {  // false: no window to draw into now
@@ -1166,6 +1234,64 @@ static void save_window_image(VkCommandBuffer cb, VkSpan *out) {
     image_barrier(cb, g_vk.sc_images[cur_frame.image], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 }
 
+#ifdef __ANDROID__
+// (S23) How long after its grid time a frame goes out: room for the GPU to finish it. Half a period by default (a whole
+// one adds its 33 ms to every button press); a frame that takes longer shows when ready, as without this.
+// LARECOMP_PRESENT_DELAY_MS=<ms>. Steady frames: 50 ms, what a frame needs to be ready on the refresh it's held to.
+static uint64_t present_delay_ns(void) {
+    extern uint64_t framepace_period_ns(void);
+    static long long ms10 = -1;
+    if (ms10 < 0) ms10 = getenv("LARECOMP_PRESENT_DELAY_MS") ? (long long)(atof(getenv("LARECOMP_PRESENT_DELAY_MS")) * 10) : 0;
+    return ms10 > 0 ? (uint64_t)ms10 * 100000ull : steady_frames() ? 50000000ull : framepace_period_ns() / 2;
+}
+
+static uint64_t g_frame_grid;  // the frame being presented (render thread): vk_present_set_grid
+void vk_present_set_grid(uint64_t grid) { g_frame_grid = grid; }
+
+static uint32_t g_present_id;
+
+// (S23) Steady frames (LARECOMP_PRESENT_LOCK=0/1 over it): the time asked for follows the screen's own refreshes. The pace's grid and the panel run
+// on two clocks, so the grid slides over the refreshes (0.4 ms a second measured at 60 Hz); near the edge of one, frames
+// fell on either side of it and went out at 16.7 / 50 ms, with 30 ms to spare. Here each frame takes the refreshes after
+// the last one's, and only goes back to the grid when over a refresh away from it. It asks for half a refresh before the
+// one it wants: the middle of the window that shows on that refresh.
+static uint64_t present_lock(uint64_t want) {
+    static int env = -2;
+    if (env == -2) env = getenv("LARECOMP_PRESENT_LOCK") ? atoi(getenv("LARECOMP_PRESENT_LOCK")) != 0 : -1;
+    if (!g_vk.display_timing || (env >= 0 ? !env : !steady_frames())) return want;
+    extern uint64_t framepace_period_ns(void);
+    static uint64_t anchor, target, refresh;
+    static uint32_t n, cuts;
+    if (!(n & 127)) {
+        VkRefreshCycleDurationGOOGLE d;
+        if (vkGetRefreshCycleDurationGOOGLE(g_vk.dev, g_vk.swapchain, &d) == VK_SUCCESS && d.refreshDuration) {
+            if (llabs((long long)refresh - (long long)d.refreshDuration) > 500000)  // (0.5 ms: the measure itself moves a little)
+                LOG("[present] lock: a refresh is %.3f ms\n", d.refreshDuration / 1e6);
+            refresh = d.refreshDuration;
+        }
+    }
+    if (!(++n & 3)) {
+        VkPastPresentationTimingGOOGLE p[16];
+        uint32_t c = 16;
+        VkResult r = vkGetPastPresentationTimingGOOGLE(g_vk.dev, g_vk.swapchain, &c, p);
+        for (uint32_t i = 0; (r == VK_SUCCESS || r == VK_INCOMPLETE) && i < c; i++)
+            if (p[i].actualPresentTime > anchor) anchor = p[i].actualPresentTime;
+    }
+    if (!refresh || !anchor) return want;
+    uint64_t steps = (framepace_period_ns() + refresh / 2) / refresh, next = target + steps * refresh;
+    int64_t off = (int64_t)(next - want);
+    if (!target || off > (int64_t)refresh || off < -(int64_t)refresh) {
+        if (target && ++cuts <= 50) LOG("[present] lock: back to the grid (%u), %.1f ms away\n", cuts, off / 1e6);
+        next = want;
+    }
+    int64_t since = (int64_t)(next - anchor);
+    int64_t k = (since + (since < 0 ? -(int64_t)refresh / 2 : (int64_t)refresh / 2)) / (int64_t)refresh;
+    target = anchor + (uint64_t)(k * (int64_t)refresh);
+    return target - refresh / 2;
+}
+
+#endif
+
 // End rendering into the window image and present it. shot_path: also save the window image as PNG.
 void vk_frame_end(const char *shot_path) {
     if (!cur_frame.ok) return;
@@ -1177,6 +1303,10 @@ void vk_frame_end(const char *shot_path) {
     vk_end_rendering(cb);
     VkSpan shot = {0};
     if (shot_path) save_window_image(cb, &shot);
+#ifdef __ANDROID__
+    uint64_t grid = g_frame_grid;  // (0: not a paced game frame - the start screen, a menu drawn over a still game)
+    g_frame_grid = 0;
+#endif
     image_barrier(cb, g_vk.sc_images[cur_frame.image], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
     uint32_t img = cur_frame.image;
     if (!done_sem[img]) done_sem[img] = binary_semaphore();
@@ -1186,6 +1316,28 @@ void vk_frame_end(const char *shot_path) {
                            .swapchainCount = 1, .pSwapchains = &g_vk.swapchain, .pImageIndices = &img};
 #ifdef __ANDROID__
     uint64_t trace_start = vk_timing_trace_on() ? SDL_GetTicksNS() : 0;
+    // (S23) when to show it: the frame's time on the pace's grid plus a fixed delay, so a GPU that finishes a little
+    // early or late can still land on the same refresh - with a 120 Hz screen and MAILBOX, frames went out at 25 / 41.7 ms
+    // instead of 33.3 (measured playing, 2026-10-29). Frames that aren't paced have no time.
+    VkPresentTimeGOOGLE ptime;
+    VkPresentTimesInfoGOOGLE ptimes;
+    {
+        extern int vk_ab(const char *what);
+        extern uint64_t plat_now_ns(void);
+        uint64_t due = grid ? present_lock(grid + present_delay_ns()) : 0;
+        int ab = vk_ab("timing");  // (LARECOMP_AB=<frames>:timing: -1 when not under test)
+        static int last_ab = -2;
+        if (ab != last_ab && ab >= 0) LOG("[ab] timing %d from %llu\n", ab, (unsigned long long)plat_now_ns());
+        last_ab = ab;
+        if (g_vk.display_timing && due && ab != 0) {
+            ptime = (VkPresentTimeGOOGLE){.presentID = ++g_present_id, .desiredPresentTime = due};
+            ptimes = (VkPresentTimesInfoGOOGLE){.sType = VK_STRUCTURE_TYPE_PRESENT_TIMES_INFO_GOOGLE, .swapchainCount = 1,
+                                                .pTimes = &ptime};
+            pi.pNext = &ptimes;
+        }
+        android_set_frame_rate();
+        if (g_vk.display_timing) present_timing_log();
+    }
 #endif
     VkResult r = vkQueuePresentKHR(g_vk.queue, &pi);
 #ifdef __ANDROID__
@@ -1234,7 +1386,7 @@ static uint64_t frames, total_frames, g_frame_counter;
 static uint64_t g_game_frames;
 bool vk_async_on(void);
 bool vk_async_is_render_thread(void);
-void vk_async_present(NvnTexture *t);
+void vk_async_present(NvnTexture *t, uint64_t grid);
 void vk_async_drain(void);
 uint64_t renderer_present_count(void) { return vk_async_on() && !vk_async_is_render_thread() ? g_game_frames : total_frames; }
 #else
@@ -1268,12 +1420,15 @@ static void present_game_half(void) {
 
 void vk_present_now(NvnTexture *t);
 void backend_present(NvnTexture *t) {
+    extern uint64_t g_present_grid_ns;  // (nvn/objects.c: this frame's, set just before)
+    uint64_t grid = __atomic_exchange_n(&g_present_grid_ns, 0, __ATOMIC_RELAXED);
     if (!vk_async_on()) {
+        vk_present_set_grid(grid);
         vk_present_now(t);
         return;
     }
     g_game_frames++;
-    vk_async_present(t);  // (the window's half, on the render thread: vk_present_now)
+    vk_async_present(t, grid);  // (the window's half, on the render thread: vk_present_now)
     present_game_half();
 }
 #endif
@@ -1714,11 +1869,18 @@ bool vk_adreno_8xx(const char *name) {
     if (!a) return false;
     while (*a && (*a < '0' || *a > '9')) a++;
     int n = atoi(a);
-    return n >= 800 && n < 900;
+    // (S23: the Adreno 740 too - the Galaxy S23 Ultra played with all three on by hand and drew right, 2026-10-29;
+    // not the 750, see above)
+    return (n >= 800 && n < 900) || n == 740;
 }
 // A Turnip path's setting (-1 Automatic, 1 on, 0 off) for this GPU
 bool vk_turnip_path_on(int setting) { return setting < 0 ? vk_adreno_8xx(g_vk.props.deviceName) : setting != 0; }
 static bool g_lrz_at_start = true;
+static bool g_fifo_at_start;
+static int g_turnip_mode_at_start;
+bool vk_tests_changed(void) {  // (S23: Settings > Video > Tests read when the app starts)
+    return g_settings.present_fifo != g_fifo_at_start || g_settings.turnip_mode != g_turnip_mode_at_start;
+}
 bool vk_lrz_at_start(void) { return g_lrz_at_start; }  // (the start screen: a change needs a restart)
 const char *vk_gpu_name(void) { return g_vk.props.deviceName; }
 #endif
@@ -1735,6 +1897,8 @@ void ui_window_init(void) {
     {   // Driver compatibility (the start screen's Settings > Prelaunch): applied before the driver loads
         extern void android_log_file(bool on);
         android_log_file(g_settings.log_file);
+        vk_gpu_turbo_start();
+        g_fifo_at_start = g_settings.present_fifo, g_turnip_mode_at_start = g_settings.turnip_mode;
         // Turnip reads TU_DEBUG once, when it starts: low-resolution Z off (it can drop draws on some Adreno GPUs).
         // Automatic needs the GPU before Vulkan names it: the kernel's (the GPU driver reads it from the app too), else
         // the last start's; unknown: on.
@@ -1751,7 +1915,13 @@ void ui_window_init(void) {
             lrz = !model[0] || vk_adreno_8xx(model);
         }
         g_lrz_at_start = lrz != 0;
-        if (!lrz && !getenv("TU_DEBUG")) setenv("TU_DEBUG", "nolrz", 1);
+        if (!getenv("TU_DEBUG")) {
+            static const char *const modes[] = {"", "gmem", "sysmem", "noubwc"};  // (S23: Settings > Video > Tests)
+            const char *mode = modes[g_settings.turnip_mode];
+            char debug[32];
+            snprintf(debug, sizeof debug, "%s%s%s", lrz ? "" : "nolrz", !lrz && *mode ? "," : "", mode);
+            if (*debug) setenv("TU_DEBUG", debug, 1);
+        }
         LOG("[vk] Turnip LRZ %s (%s%s)%s%s\n", lrz ? "on" : "off", g_settings.turnip_lrz < 0 ? "automatic: " : "settings",
             g_settings.turnip_lrz < 0 ? (model[0] ? model : "GPU unknown") : "", getenv("TU_DEBUG") ? ", TU_DEBUG=" : "",
             getenv("TU_DEBUG") ? getenv("TU_DEBUG") : "");

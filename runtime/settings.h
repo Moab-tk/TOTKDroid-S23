@@ -44,6 +44,14 @@ typedef struct {
     bool files_in_place;  // Android: a setup reads the picked romfs/ where it is, no copy (services/fs.c); off by default
     bool native_code;     // Android: the game's own code on the CPU, no build of it (runtime/native.c); off by default
     bool sync_lag;        // Android: the game's next frame overlaps the GPU's last (nvn/objects.c nvnSyncWait); on by default
+    int ui_size;          // (S23) the settings pages' text and rows: 0 normal, 1 large, 2 extra large (ui/menu.mm)
+    // (S23) Settings > Video > Tests, all off by default
+    bool gpu_turbo;       // the GPU doesn't rest while the app is in front (vulkan/android_driver.c vk_gpu_turbo)
+    bool present_fifo;    // FIFO instead of MAILBOX (vulkan/device.c present_mode); read when the app starts
+    bool panel_lock;      // at 30 FPS: the panel at 60 Hz, frames held to its refreshes (vulkan/device.c); on by default
+    int shader_workers;   // threads building shaders, 0 automatic (vulkan/exec.c)
+    int force_aniso;      // 0 the game's, 1-5: 1x, 2x, 4x, 8x, 16x (vulkan/textures.c)
+    int turnip_mode;      // TU_DEBUG: 0 none, 1 gmem, 2 sysmem, 3 noubwc; read when the app starts (vulkan/device.c)
     // Driver compatibility (the start screen's Settings > Prelaunch, ui/launcher.mm; from LASRecompAndroid), for GPUs
     // where a Turnip path draws wrong: read when the game starts (gpu_heap, inplace_reads) or when the app starts
     // (turnip_lrz, log_file). -1 Automatic: on for the Adreno 8xx GPUs these paths were made on, off elsewhere
@@ -74,6 +82,10 @@ extern Settings g_settings;
 
 void settings_load(void);
 void settings_save(void);
+// (S23) the start screen's saved settings (ui/launcher.mm): the settings file as it stands now to path / path over it,
+// for the next start to read
+bool settings_export(const char *path);
+bool settings_import(const char *path);
 // The menu's RESTORE DEFAULTS: the Video and Audio options back to the defaults (the language, the controls, the touch
 // layout, mods and the one-time questions stay)
 void settings_reset_defaults(void);

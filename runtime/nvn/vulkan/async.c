@@ -53,6 +53,7 @@ void kernel_blocking_begin(void);        // kernel.c: core 0 to the game's other
 void kernel_blocking_end(void);
 void vk_execute_now(uint64_t handle);    // exec.c: translate and submit a command list
 void vk_present_now(NvnTexture *t);      // device.c: the window's half of backend_present
+void vk_present_set_grid(uint64_t grid);  // (device.c)
 void nvn_sync_set_seq(uint64_t guest, uint64_t seq);
 uint64_t renderer_fence_seq(void);
 
@@ -96,7 +97,7 @@ static void *render_main(void *arg) {
         else {
             vk_tl(r.type == REQ_EXEC ? "render: list start" : r.type == REQ_PRESENT ? "render: present start" : "render: fence", r.id, 0);
             if (r.type == REQ_EXEC) { vk_execute_now(r.a); free(r.p); }  // (r.p: the list copy, vk_async_execute)
-            else if (r.type == REQ_PRESENT) vk_present_now((NvnTexture *)r.p);
+            else if (r.type == REQ_PRESENT) vk_present_set_grid(r.a), vk_present_now((NvnTexture *)r.p);
             if (r.type != REQ_FENCE) vk_tl(r.type == REQ_EXEC ? "render: list end" : "render: present end", r.id, 0);
             else if (r.type == REQ_FENCE) nvn_sync_set_seq(r.a, renderer_fence_seq());
         }
@@ -279,10 +280,10 @@ void vk_async_execute(uint64_t handle) {
     pthread_mutex_unlock(&p_lock);
 }
 
-void vk_async_present(NvnTexture *t) {
+void vk_async_present(NvnTexture *t, uint64_t grid) {  // (grid: this frame's time on the pace's grid, device.c)
     pthread_mutex_lock(&p_lock);
     push_texregs();
-    push(REQ_PRESENT, 0, t);
+    push(REQ_PRESENT, grid, t);
     pthread_mutex_unlock(&p_lock);
 }
 

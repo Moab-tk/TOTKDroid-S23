@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../../settings.h"
 #include "vk.h"
 #include "../astc.h"
 #include "../tex_hash.h"
@@ -896,11 +897,31 @@ static void texture_trace_record(int kind, uint64_t source, uint64_t upload, uin
     }
     since = now;
 }
+// (S23) With no page write tracking (the heap as GPU memory: every check by samples), a texture that never changed yet
+// is looked at one frame in eight, 1 KB of it. The terrain's height tiles (flag 0x40) go once into the height array
+// kept for the region, so a tile seen old at that moment stays old there: the likely way to the "curtains", which
+// LARECOMP_TEX_FULLHASH=1 took away (2026-10-26). Those tiles, and only them: every frame, whole.
+// LARECOMP_TEX_TILES=0: as before.
+static bool texture_always_checked(const NvnTexture *t) {
+    static int on = -1;
+    if (on < 0) on = !getenv("LARECOMP_TEX_TILES") || atoi(getenv("LARECOMP_TEX_TILES"));
+    return on && (t->flags & 0x40);
+}
 static void upload_texture(NvnTexture *t, TexBackend *b) {
     if (!t->addr || t->target == 10) return;
     uint64_t frame = vk_frame_counter();
     if (b->uploaded && b->checked_frame == frame) return;
-    if (b->uploaded && !b->dynamic && ((frame + ((uintptr_t)b >> 6)) & 7)) return;
+    // A texture that never changed since its upload is checked every 8th frame - but a linear one (flag 0x40 / 0x10)
+    // every frame: BOTW fills its terrain height tiles (256x256 R16, 64x64, linear) on the CPU and draws them into the
+    // terrain's arrays (512x512x8 RGBA8) right away, once. Read up to 7 frames late, an array layer was built from the
+    // tile's old contents and kept them: the stretched "curtains" after a fast travel or a tower, until the save was
+    // loaded again (2026-11-01, POCO, 1.9.0: in two sessions of fast travels none with every frame, and the first ones
+    // back at once with every 8th; a bisection over the GPU-drawn textures had pointed at that array). There are few
+    // linear textures, and page tracking makes most checks free. LARECOMP_LIN_STAGGER=1: every 8th frame, as before.
+    static int lin_every = -1;
+    if (lin_every < 0) lin_every = !getenv("LARECOMP_LIN_STAGGER");
+    bool always = texture_always_checked(t);
+    if (b->uploaded && !b->dynamic && !always && !(lin_every && (t->flags & 0x50)) && ((frame + ((uintptr_t)b >> 6)) & 7)) return;
     const FormatInfo *fi = t->layout.fmt;
     if (!fi || !fi->bpb) return;
     VkFmt mf = fmt_of(t->format);
@@ -912,7 +933,7 @@ static void upload_texture(NvnTexture *t, TexBackend *b) {
     const uint8_t *mem = (const uint8_t *)(uintptr_t)t->addr;
     static int always_full = -1;
     if (always_full < 0) always_full = getenv("LARECOMP_TEX_FULLHASH") ? 1 : 0;
-    bool full = b->dynamic || !b->uploaded || always_full;
+    bool full = b->dynamic || !b->uploaded || always_full || always;
     // (safety net: a full hash now and then - one larger than the frame's budget too, as the frame's first: TOTK's
     // 26 MB terrain atlas never fit it and a change its samples missed stayed unseen for 20 s)
     bool periodic = frame - b->full_frame >= 120 && (full_hash_budget >= total || full_hash_budget == (4u << 20));
@@ -1515,6 +1536,13 @@ static VkSampler make_sampler(const NvnSamplerDesc *d, bool compare) {
     if (si.maxLod < si.minLod) si.maxLod = si.minLod;
     si.mipLodBias = d->lod_bias;
     if (d->max_aniso > 1) { si.anisotropyEnable = VK_TRUE; si.maxAnisotropy = fminf(d->max_aniso, 16); }
+#ifdef __ANDROID__
+    // (S23) Settings > Video > Tests: only where it means anything, textures with mipmaps filtered both ways
+    if (g_settings.force_aniso > 0 && mf > 1 && !d->compare_mode && si.minFilter == VK_FILTER_LINEAR && si.magFilter == VK_FILTER_LINEAR) {
+        si.maxAnisotropy = (float)(1 << (g_settings.force_aniso - 1));
+        si.anisotropyEnable = si.maxAnisotropy > 1;
+    }
+#endif
     static float lodmin = -1;
     if (lodmin < 0) lodmin = getenv("LARECOMP_LOD_MIN") ? (float)atof(getenv("LARECOMP_LOD_MIN")) : 0;
     if (lodmin > 0 && mf > 1) si.minLod = fmaxf(si.minLod, lodmin);
