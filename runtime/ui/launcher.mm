@@ -1739,10 +1739,10 @@ static void recommended_apply(bool lighter) {
     g_settings.native_code = true;
     g_settings.gpu_heap = g_settings.inplace_reads = g_settings.turnip_lrz = -1;  // (Automatic: on on the 740, as tested; safe on the others)
     g_settings.gpu_turbo = false;
-    g_settings.present_fifo = true;
+    g_settings.present_fifo = false;  // (what played best on the S23 Ultra, 2026-11-02)
     g_settings.panel_lock = true;
-    g_settings.shader_workers = 0;
-    g_settings.force_aniso = 0;
+    g_settings.shader_workers = 2;
+    g_settings.force_aniso = 1;
     g_settings.turnip_mode = 0;
     settings_save();
     std::string d = driver_recommended();

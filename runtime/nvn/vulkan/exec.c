@@ -391,7 +391,10 @@ void vk_pace_frame(void) {
                 if (n) plat_adpf_extra_threads(tids, n);
             }
         }
-        plat_frame_work_gpu((uint64_t)(hint_busy * 1e6), no_gpu ? 0 : gpu, follow && pace_slow ? 33333333ull : 16666667ull,
+        // (Frame rate 30, fixed: from BOTWRecompAndroid 0.2.9 - no 60 fps trial to make room for, so the governor stops running
+        // the threads at clocks that would finish them in 13 ms of their 33. LARECOMP_AB=<n>:adpf30: the 60 fps budget on side B)
+        bool fixed30 = g_settings.fps_mode == 1 && AB("adpf30") != 1;
+        plat_frame_work_gpu((uint64_t)(hint_busy * 1e6), no_gpu ? 0 : gpu, (follow && pace_slow) || fixed30 ? 33333333ull : 16666667ull,
                             (uint64_t)(game_busy * 1e6));
     }
 #endif
