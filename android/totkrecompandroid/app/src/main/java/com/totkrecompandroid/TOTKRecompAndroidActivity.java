@@ -78,6 +78,7 @@ public class TOTKRecompAndroidActivity extends SDLActivity {
     private static native boolean nativeCheckRomfsImage(int version, int fd);  // (fd: closed by the native side)
     private static native String nativeImageLoose(int fd);
     private static native void nativeDriverPicked(String name);
+    private static native void nativeGpuTurbo(boolean front);
     private static native void nativeModImportDone(String message);
     private static native void nativeLogFolderPicked(String name);
 
@@ -102,6 +103,9 @@ public class TOTKRecompAndroidActivity extends SDLActivity {
             copyIfChanged(new File(games, "totkgame.so.id"), new File(res, "totkgame.so.id"));
             setenv("LARECOMP_NATIVE_LIB_DIR", getApplicationInfo().nativeLibraryDir);
             setenv("LARECOMP_LAST_EXIT", lastExit());
+            setenv("LARECOMP_DRIVERS_DIR", new File(getExternalFilesDir(null), "drivers").getPath());
+            setenv("LARECOMP_DEVICE_BRAND", android.os.Build.MANUFACTURER);
+            offerDrivers();
             File gen = new File(getFilesDir(), "gen");
             unpackGen(gen);
             setenv("LARECOMP_GEN_DIR", gen.getAbsolutePath());
@@ -111,7 +115,10 @@ public class TOTKRecompAndroidActivity extends SDLActivity {
             // testing: the runtime's LARECOMP_* switches from the launch intent, separated by commas (adb shell drops
             // the quotes around spaces), e.g. LARECOMP_VK_DRIVER= is the system driver:
             // adb shell am start -n com.totkrecompandroid/com.totkrecompandroid.TOTKRecompAndroidActivity --es env LARECOMP_NO_LAUNCHER=1,LARECOMP_VK_DRIVER=
-            String env = getIntent() != null ? getIntent().getStringExtra("env") : null;
+            // (S23) only with the file testes.txt in the app's folder, which adb can make and other apps can't: these
+            // switches name libraries to load, and this activity is open to every app on the phone
+            boolean tests = new File(getExternalFilesDir(null), "testes.txt").exists();
+            String env = tests && getIntent() != null ? getIntent().getStringExtra("env") : null;
             // Opened again from the recent apps, Android hands back that test launch's intent: keep only which game
             // version it ran (a scripted input left in it ignored the touch screen - the menu looked frozen)
             boolean recents = getIntent() != null && (getIntent().getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0;
@@ -149,13 +156,23 @@ public class TOTKRecompAndroidActivity extends SDLActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        gpuTurbo(true);
         stats.post(report);
     }
 
     @Override
     protected void onPause() {
+        gpuTurbo(false);
         stats.removeCallbacks(report);
         super.onPause();
+    }
+
+    // (S23) Settings > Video > Tests: only while the app is in front (runtime/nvn/vulkan/android_driver.c)
+    private static void gpuTurbo(boolean front) {
+        try {
+            nativeGpuTurbo(front);
+        } catch (UnsatisfiedLinkError notLoaded) {
+        }
     }
 
     // Battery temperature, charge and power draw, and Android's thermal state (runtime/platform/android.c).
@@ -311,9 +328,14 @@ public class TOTKRecompAndroidActivity extends SDLActivity {
         }, "driver").start();
     }
 
-    private void dropCustomDriver() {
-        deleteTree(new File(getExternalFilesDir(null), "drivers"));
-        deleteTree(new File(getFilesDir(), "drivers"));
+    private void dropCustomDriver() {  // (S23: the system's is picked; the packages stay on the list)
+        File dir = new File(getExternalFilesDir(null), "drivers");
+        dir.mkdirs();
+        try (OutputStream o = new FileOutputStream(new File(dir, "active.txt"))) {
+            o.write("-".getBytes());
+        } catch (IOException e) {
+            Log.e(TAG, "driver: " + e);
+        }
     }
 
     // The app icon's long-press shortcut (res/xml/shortcuts.xml): the system driver, settings out of reach or not - a
@@ -1069,18 +1091,21 @@ public class TOTKRecompAndroidActivity extends SDLActivity {
             if (c != null && c.moveToFirst() && !c.isNull(0)) name = c.getString(0);
         } catch (Exception ignored) {
         }
+        name = new File(name).getName();  // (the provider's to give: never a path)
         if (!DRIVER_FILE.matcher(name).find()) return "";
         try {
-            File dir = new File(ctx.getExternalFilesDir(null), "drivers");
-            deleteTree(dir);
+            File dir = new File(ctx.getExternalFilesDir(null), "drivers");  // (S23: the ones before stay, to pick from)
             dir.mkdirs();
             File dst = new File(dir, name);
             try (InputStream in = ctx.getContentResolver().openInputStream(f)) {
                 copy(in, dst);
             }
             if (driverKind(dst) == 0) {  // (named like one, but neither a zip nor a library)
-                deleteTree(dir);
+                dst.delete();
                 return "";
+            }
+            try (OutputStream o = new FileOutputStream(new File(dir, "active.txt"))) {
+                o.write(name.getBytes());
             }
             return name;
         } catch (Exception e) {
@@ -1199,13 +1224,68 @@ public class TOTKRecompAndroidActivity extends SDLActivity {
     // The first driver in <external files>/drivers, in internal storage (copied again only when it changed). A zip's
     // library is the one its meta.json names (adrenotools' libraryName: packages with support libraries beside it, as
     // RADV-Xclipse's), else one named like a Vulkan driver, else its only / last .so.
+    // (S23) The packages the app comes with (assets/drivers) join the list on Qualcomm phones, once: one the player
+    // deletes stays deleted. Offered, not chosen: whatever ran before keeps running.
+    private void offerDrivers() throws IOException {
+        boolean qualcomm = android.os.Build.HARDWARE.toLowerCase().startsWith("qcom")
+                || (android.os.Build.VERSION.SDK_INT >= 31 && "QTI".equals(android.os.Build.SOC_MANUFACTURER));
+        String[] names = getAssets().list("drivers");
+        if (!qualcomm || names == null) return;
+        File dir = new File(getExternalFilesDir(null), "drivers");
+        dir.mkdirs();
+        File mark = new File(dir, "offered.txt");
+        String offered = mark.exists() ? readSmall(mark) : "";
+        File active = new File(dir, "active.txt");
+        boolean changed = false;
+        for (String n : names) {
+            if (!DRIVER_FILE.matcher(n).find() || offered.contains(n + "\n")) continue;
+            if (!active.exists()) {  // (nothing picked meant "the first one": the same driver as before, now by name)
+                File[] had = dir.listFiles((d, x) -> DRIVER_FILE.matcher(x).find());
+                String keep = "-";
+                if (had != null && had.length > 0) {
+                    Arrays.sort(had);
+                    keep = had[0].getName();
+                }
+                try (OutputStream o = new FileOutputStream(active)) {
+                    o.write(keep.getBytes());
+                }
+            }
+            File dst = new File(dir, n);
+            if (!dst.exists()) {
+                File tmp = new File(dir, n + ".part");
+                try (InputStream in = getAssets().open("drivers/" + n)) {
+                    copy(in, tmp);
+                }
+                if (!tmp.renameTo(dst)) throw new IOException("driver: " + n);
+            }
+            offered += n + "\n";
+            changed = true;
+        }
+        if (changed) try (OutputStream o = new FileOutputStream(mark)) {
+            o.write(offered.getBytes());
+        }
+    }
+
     private File customDriver() throws IOException {
         File src = new File(getExternalFilesDir(null), "drivers");
         src.mkdirs();
         File[] files = src.listFiles((d, n) -> DRIVER_FILE.matcher(n).find());
+        File[] unpacked = new File(getFilesDir(), "drivers").listFiles();  // (S23: the copy of one taken off the list)
+        if (unpacked != null) for (File u : unpacked) {
+            boolean kept = false;
+            if (files != null) for (File x : files) kept |= DRIVER_FILE.matcher(x.getName()).replaceAll("").equals(u.getName());
+            if (!kept) deleteTree(u);
+        }
         if (files == null || files.length == 0) return null;
         Arrays.sort(files);
         File f = files[0];
+        // (S23) the one picked in Settings > Files, "-": the system's; nothing picked: the first, as before
+        File active = new File(src, "active.txt");
+        if (active.exists()) {
+            String a = readSmall(active).trim();
+            if (a.equals("-")) return null;
+            for (File x : files) if (x.getName().equals(a)) f = x;
+        }
         File dir = new File(getFilesDir(), "drivers/" + DRIVER_FILE.matcher(f.getName()).replaceAll(""));
         File stamp = new File(dir, ".source");  // (the package's size:date, then the library chosen in it)
         String id = f.length() + ":" + f.lastModified();

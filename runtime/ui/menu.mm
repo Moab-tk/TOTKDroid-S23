@@ -992,7 +992,7 @@ extern "C" float menu_ui_scale() {
     int u = g_settings.ui_size;
     return sizes[u < 0 ? 0 : u > 2 ? 2 : u];
 }
-extern "C" bool menu_back_button(float scale) { return sheikah_button("Back", ImVec2(250 * scale, 62 * scale), 0, scale); }
+extern "C" bool menu_back_button(float scale) { return zonai_button("Back", ImVec2(250 * scale, 62 * scale), 0, scale); }
 
 static void tabs_body(float scale, bool in_game, void (*prelaunch)(float)) {
     float k = menu_ui_scale();

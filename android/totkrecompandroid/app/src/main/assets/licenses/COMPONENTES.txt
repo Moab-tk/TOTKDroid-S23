@@ -1,0 +1,27 @@
+TOTK S23: modificação não oficial do TOTKDroid, de mamcjr.
+Código-fonte: https://github.com/Moab-tk/TOTKDroid-S23
+
+LAS Recomp, de peiikai, e TOTKDroid e BOTWRecompAndroid, de mamcjr: licença MIT, em LICENSE.txt.
+
+Componentes de terceiros, cada um com a sua licença:
+- SDL: zlib
+- Dear ImGui: MIT (imgui.txt)
+- libadrenotools: BSD-2-Clause (libadrenotools.txt)
+- SMAA: MIT (smaa.txt)
+- AMD FidelityFX FSR 1: MIT
+- Qualcomm Snapdragon GSR: BSD-3-Clause
+- volk: MIT
+- Vulkan Memory Allocator: MIT
+- shaderc: Apache 2.0
+- FFmpeg: LGPL
+- LZ4: BSD-2-Clause
+- Capstone: BSD-3-Clause
+- Unicorn: GPLv2
+- Python: PSF
+- Zig: MIT
+- Mesa (driver Turnip, builds de The412Banner): MIT e outras, https://docs.mesa3d.org/license.html
+- Fontes: Baloo 2 (OFL), DejaVu Sans (licença Bitstream Vera)
+- Robô do Android: reproduzido ou modificado de trabalho criado e compartilhado pelo Google (CC BY 3.0)
+
+Lista completa e créditos: README-ORIGINAL.md, no código-fonte.
+The Legend of Zelda e Tears of the Kingdom são marcas da Nintendo. Este projeto não é afiliado à Nintendo.

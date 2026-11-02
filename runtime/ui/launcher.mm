@@ -1426,9 +1426,9 @@ void launcher_video_options(void) {
             "fps) but by the Vulkan rules. Automatic: on for Adreno 8xx GPUs, off for the others. Applies when the game starts.");
         tri("Turnip low-resolution Z (LRZ)", &g_settings.turnip_lrz,
             "Turnip's early depth test, a little faster. Off can fix missing or broken drawing on some Adreno GPUs. Automatic: on for "
-            "Adreno 8xx GPUs, off for the others. Applies when BOTWRecompAndroid restarts.");
+            "Adreno 8xx GPUs, off for the others. Applies when TOTKDroid restarts.");
         bool lrz_now = g_settings.turnip_lrz < 0 ? a8 : g_settings.turnip_lrz != 0;
-        if (lrz_now != vk_lrz_at_start() && opt_button("Restart now##lrz", "Restart BOTWRecompAndroid to apply it.")) {
+        if (lrz_now != vk_lrz_at_start() && opt_button("Restart now##lrz", "Restart TOTKDroid to apply it.")) {
             settings_save();
             android_call("restartApp");
         }
@@ -1448,7 +1448,7 @@ void launcher_video_options(void) {
         if (opt_choice("Presentation mode", &fifo, present, 2, 1,
                        "How finished frames reach the screen. Mailbox: a newer frame replaces one still waiting. FIFO: every "
                        "frame is shown, in order - it may look smoother, but if the screen falls behind the game waits for it. "
-                       "Applies when BOTWRecompAndroid restarts.")) {
+                       "Applies when TOTKDroid restarts.")) {
             g_settings.present_fifo = fifo != 0;
             changed = true;
         }
@@ -1465,8 +1465,8 @@ void launcher_video_options(void) {
         changed |= opt_choice("Turnip drawing mode", &g_settings.turnip_mode, modes, 4, 0,
                               "Only for the Turnip driver. Automatic: it picks for each pass, the best choice in general. The two "
                               "fixed modes are there to compare frame rates. No compression is only to look for drawing errors, "
-                              "and it's slower. Applies when BOTWRecompAndroid restarts.");
-        if (vk_tests_changed() && opt_button("Restart now##tests", "Restart BOTWRecompAndroid to apply it.")) {
+                              "and it's slower. Applies when TOTKDroid restarts.");
+        if (vk_tests_changed() && opt_button("Restart now##tests", "Restart TOTKDroid to apply it.")) {
             settings_save();
             android_call("restartApp");
         }
@@ -1480,7 +1480,7 @@ static bool g_open_files;     // Settings > Prelaunch: the Game Files page (vers
 #ifdef __ANDROID__
 // (S23) Settings > Files as option rows: what's used most first, the long explanations in the side pane, and the kept
 // driver packages as a list to pick from (<external files>/drivers; active.txt names the chosen one, "-" the system's:
-// BOTWRecompAndroidActivity.customDriver reads it at the next start).
+// TOTKRecompAndroidActivity.customDriver reads it at the next start).
 static std::string drivers_dir() {
     const char *d = getenv("LARECOMP_DRIVERS_DIR");
     return d ? d : "";
@@ -1656,42 +1656,6 @@ static void prelaunch_rows(float sc) {
         note_row(msg, failed);
     }
 
-    opt_section("DLC");
-    {
-        pthread_mutex_lock(&g_lock);
-        std::string msg = g_dlc_msg;
-        bool failed = g_dlc_failed, dbusy = g_dlc_busy;
-        pthread_mutex_unlock(&g_lock);
-        bool have = fs_aoc_image() != NULL;
-        const char *about = "The Expansion Pass - The Master Trials and The Champions' Ballad - for game versions 1.6.0, 1.8.2 and 1.9.0. "
-                            "Choose the folder with your own DLC's extracted romfs: the larger pack (01007EF00011F001, 7,094 files, "
-                            "about 1.4 GB) holds both; the other one is only the Ballad's unlock and isn't needed. The DLC isn't "
-                            "included with BOTWRecompAndroid.";
-        if (dbusy || g_busy) opt_disable_next();
-        if (opt_action(have ? "Install again" : "Install DLC", tr(have ? "Installed." : "Not installed."), about)) {
-            pthread_mutex_lock(&g_lock);
-            g_dlc_busy = true, g_dlc_msg.clear();
-            pthread_mutex_unlock(&g_lock);
-            android_call("pickDlcFolder");  // (then importDlc -> nativeBuildDlc -> nativeDlcDone)
-        }
-        if (have) {
-            if (dbusy || g_busy) opt_disable_next();
-            if (opt_button("Remove DLC", about)) {
-                remove_tree(dlc_dir());
-                pthread_mutex_lock(&g_lock);
-                g_dlc_msg = tr("DLC removed."), g_dlc_failed = false;
-                pthread_mutex_unlock(&g_lock);
-            }
-        }
-        float f = g_dlc_frac;
-        if (dbusy && f >= 0) {
-            char m[80];
-            snprintf(m, sizeof m, tr("Installing the DLC... %d%%"), (int)(f * 100));
-            note_row(m);
-        }
-        note_row(msg, failed);
-    }
-
     opt_section("Game font");
     {
         import_fonts();
@@ -1716,7 +1680,7 @@ static void prelaunch_rows(float sc) {
         std::string folder = g_log_folder;
         pthread_mutex_unlock(&g_lock);
         const char *log_about = "Writes what the app reports (GPU, driver, errors) to botwrecomp-log.txt in a folder you choose (create "
-                                "one, e.g. Download/BOTWRecomp), to open on the phone and send with a bug report. Turn it on and play "
+                                "one, e.g. Download/TOTKDroid), to open on the phone and send with a bug report. Turn it on and play "
                                 "until the problem shows; after a crash, the run before is kept as botwrecomp-log-previous.txt.";
         if (opt_toggle("Save a log file", &g_settings.log_file, false, log_about)) {
             changed = true;
@@ -1729,7 +1693,7 @@ static void prelaunch_rows(float sc) {
     opt_section("Credits");
     {   // (S23) README.pt-BR.md's credits, and what this version is
         opt_action("Original project", "mamcjr",
-                   "All of this app's base is BOTWRecompAndroid, by mamcjr (github.com/mamcjr/BOTWRecompAndroid). The credit for "
+                   "All of this app's base is TOTKDroid, by mamcjr (github.com/mamcjr/TOTKDroid). The credit for "
                    "the project is entirely theirs.");
         opt_action("Engine", "peiikai",
                    "LAS Recomp, by peiikai (MIT license), the recompiler and runtime everything starts from, and "
@@ -1766,7 +1730,6 @@ static SettingBlock g_blocks[SETTING_BLOCKS];
 static int g_rec_ask;  // 1 the S23 Ultra's, 2 the lighter ones
 static void recommended_apply(bool lighter) {
     g_settings.fps_mode = 1;  // (30)
-    g_settings.event_fps_unlock = true;
     g_settings.res_mode = lighter ? RES_Q75 : 1;
     g_settings.out_lines = lighter ? 900 : 1080;
     g_settings.upscaler = UPSCALE_SHARP;
@@ -2895,7 +2858,7 @@ extern "C" void launcher_run(const char *root) {
                 text(ImVec2(right - vsz.x, y), vs, IM_COL32(255, 255, 255, 255), ver.c_str(), false);
 #ifdef __ANDROID__
                 {   // (S23) whose project this is: more in Settings > Files > Credits
-                    const char *credit = tr("Unofficial modification of BOTWRecompAndroid, by mamcjr");
+                    const char *credit = tr("Unofficial modification of TOTKDroid, by mamcjr");
                     float cs = fs * 0.8f;
                     ImVec2 csz = font->CalcTextSizeA(cs, FLT_MAX, 0, credit);
                     text(ImVec2(right - csz.x, y - csz.y - 6 * s), cs, IM_COL32(225, 230, 245, 255), credit, false);

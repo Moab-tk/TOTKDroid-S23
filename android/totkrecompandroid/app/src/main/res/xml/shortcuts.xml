@@ -12,7 +12,7 @@
         android:shortcutLongLabel="@string/shortcut_pick_driver_long">
         <intent
             android:action="com.totkrecompandroid.action.PICK_DRIVER"
-            android:targetPackage="com.totkrecompandroid"
+            android:targetPackage="com.totkdroid.s23"
             android:targetClass="com.totkrecompandroid.DriverPickActivity" />
     </shortcut>
     <shortcut
@@ -23,7 +23,7 @@
         android:shortcutLongLabel="@string/shortcut_system_driver_long">
         <intent
             android:action="com.totkrecompandroid.action.SYSTEM_DRIVER"
-            android:targetPackage="com.totkrecompandroid"
+            android:targetPackage="com.totkdroid.s23"
             android:targetClass="com.totkrecompandroid.TOTKRecompAndroidActivity" />
     </shortcut>
 </shortcuts>

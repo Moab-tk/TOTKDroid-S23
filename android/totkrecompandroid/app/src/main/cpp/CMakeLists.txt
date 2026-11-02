@@ -67,8 +67,8 @@ else()
 endif()
 # -O2 -g whatever the Gradle build type (the Android runtime optimization flags): a debug build left the runtime at -O0, about half of the
 # game thread's time
-target_compile_options(main PRIVATE -O2 -g -fno-strict-aliasing -Wall -Wno-unused-function -Wno-format  # (as on Linux: %llx for uint64_t)
+target_compile_options(main PRIVATE -O2 -g -mcpu=cortex-x1+i8mm+bf16+fp16fml+sha3 -fno-strict-aliasing -Wall -Wno-unused-function -Wno-format  # (as on Linux: %llx for uint64_t)
     $<$<COMPILE_LANGUAGE:CXX>:-std=c++17>)
-target_link_libraries(main PRIVATE SDL3 shaderc_shared adrenotools android log dl m)
+target_link_libraries(main PRIVATE SDL3 shaderc_shared adrenotools android nativewindow log dl m)
 # (runtime/hle.h, ipc.h, main.c: tables in named sections found through __start_ / __stop_ symbols)
 target_link_options(main PRIVATE -Wl,-z,nostart-stop-gc)

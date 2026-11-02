@@ -21,11 +21,11 @@ android {
     ndkVersion = "30.0.16248370"
 
     defaultConfig {
-        applicationId = "com.totkrecompandroid"
+        applicationId = "com.totkdroid.s23"
         minSdk = 30
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.2.1-beta"
+        versionCode = 1
+        versionName = "0.2.1-s23-b1"
         ndk {
             abiFilters += "arm64-v8a"
         }
@@ -78,7 +78,9 @@ android {
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+            // (S23: sempre a chave fixa; sem ela o release não é montado)
+            signingConfig = signingConfigs.findByName("release")
+                ?: throw GradleException("chave fixa ausente: ${releaseKey}")
         }
     }
 
