@@ -18,6 +18,7 @@
 #include "../settings.h"
 #include "output_scale.h"
 #include "../framepace.h"
+#include "../platform.h"
 
 #define MAX_TEX 16384.0
 #define SCENE_LINES 900.0  // (BOTW's docked 3D scene: 1600x900)
@@ -68,6 +69,41 @@ static void dyn_update(double now, double gpu_ms) {
 
 double output_scale_dynamic_factor(void) { return g_dyn; }
 
+// (S23) Settings > Video > Temperature control: the 3D scene smaller before the system cuts the GPU, as Android's ADPF
+// guide advises - load eased early, from the thermal headroom, by the game's own quality setting. On the Galaxy S23
+// Ultra the cuts came with the CPU near 87 C and the board near 50 C (2026-11-02), and then held the GPU at 295-475 MHz.
+// A change remakes the render targets, so it goes in rare steps: down at most every 20 s, up after 60 s of calm.
+// 1.0 (headroom): throttling begins; the SoC's zone is the fallback where the system gives no headroom.
+// LARECOMP_LOG_HEAT=1: a line every 30 s, on or off.
+static double heat_factor(double now) {
+    static double factor = 1.0, next_check, last_change = -100, next_log;
+    static int log_on = -1;
+    if (log_on < 0) log_on = getenv("LARECOMP_LOG_HEAT") != NULL;
+    if (!g_settings.heat_control && !log_on) return 1.0;
+    if (now < next_check) return g_settings.heat_control ? factor : 1.0;
+    next_check = now + 5.0;
+    PlatDeviceStats s;
+    plat_device_stats(&s);
+    bool known = s.headroom > 0 && s.headroom < 5;
+    bool hot = (known && s.headroom >= 0.9) || s.soc_temp_c >= 83;
+    bool cool = (!known || s.headroom < 0.75) && s.soc_temp_c > 0 && s.soc_temp_c < 72;
+    double was = factor;
+    if (g_settings.heat_control) {
+        if (hot && factor > 0.7 && now - last_change >= 20) factor -= 0.1;
+        else if (cool && factor < 1.0 && now - last_change >= 60) factor += 0.1;
+        factor = round(factor * 10) / 10;
+    }
+    if (factor != was) {
+        last_change = now;
+        LOG("[heat] scene %.0f%% -> %.0f%% (headroom %.2f, status %d, soc %.1f C)\n", was * 100, factor * 100, s.headroom, s.thermal, s.soc_temp_c);
+    }
+    if (log_on && now >= next_log) {
+        next_log = now + 30;
+        LOG("[heat] headroom %.2f, status %d, soc %.1f C, battery %.1f C, scene %.0f%%\n", s.headroom, s.thermal, s.soc_temp_c, s.batt_temp_c, factor * 100);
+    }
+    return g_settings.heat_control ? factor : 1.0;
+}
+
 void output_scale(double dw, double dh, bool reshape_allowed, double now, double gpu_ms, OutScale *o) {
     double fit = fmin(dw / 1920.0, dh / 1080.0);
     static double forced = -1, wide_test = -1;
@@ -110,7 +146,7 @@ void output_scale(double dw, double dh, bool reshape_allowed, double now, double
         else if (mode == RES_Q50) share = 0.5;
         if (mode != RES_MATCH) hs = fmin(base * share, hs);
     }
-    hs = fmax(hs, 0.1);
+    hs = fmax(hs * heat_factor(now), 0.1);
     o->scene_sx = hs * shape; o->scene_sy = hs;
     double scap = fmin(MAX_TEX / (1920.0 * o->scene_sx), MAX_TEX / (1080.0 * o->scene_sy));
     if (scap < 1.0) { o->scene_sx *= scap; o->scene_sy *= scap; }

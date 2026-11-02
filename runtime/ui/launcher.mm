@@ -1405,6 +1405,10 @@ void launcher_video_options(void) {
                           "Keeps the screen at 60 Hz and shows each frame on the screen's own rhythm, so the game feels smoother "
                           "at 30 FPS. It adds a little delay to the controls. Applies when the game starts.");
 
+    changed |= opt_toggle("Temperature control", &g_settings.heat_control, false,
+                          "When the phone gets hot, the 3D image gets a little softer in steps, to delay the system cutting the "
+                          "GPU, and sharper again when it cools down. Each change can show a short hitch. Applies at once.");
+
     opt_section("Advanced");
     {   // (runtime/settings.h gpu_heap / inplace_reads / turnip_lrz / log_file: for GPUs where a Turnip path draws wrong)
         const bool a8 = vk_adreno_8xx(vk_gpu_name());  // (Automatic: on for the Adreno 8xx and the 740)
