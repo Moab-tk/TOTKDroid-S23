@@ -1,6 +1,7 @@
 #include "settings.h"
 
 #include <math.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -219,7 +220,7 @@ void settings_load(void) {
     FILE *f = fopen(SETTINGS_FILE, "r");
     if (!f) return;
 #ifdef __ANDROID__
-    char line[640];  // (touch_layout: 24 numbers)
+    char line[2200];  // (touch_layout: 24 numbers; mods_off: up to 2 KB of names)
 #else
     char line[256];
 #endif
@@ -227,8 +228,8 @@ void settings_load(void) {
     while (fgets(line, sizeof line, f)) {
         char key[64];
 #ifdef __ANDROID__
-        char val[512] = "";  // (a key with nothing after "=": mods_off when every mod is on)
-        if (sscanf(line, " %63[^= ] = %511[^\n]", key, val) < 1) continue;
+        char val[2048] = "";  // (a key with nothing after "=": mods_off when every mod is on)
+        if (sscanf(line, " %63[^= ] = %2047[^\n]", key, val) < 1) continue;
 #else
         char val[128] = "";
         if (sscanf(line, " %63[^= ] = %127[^\n]", key, val) < 1) continue;
@@ -320,15 +321,24 @@ void settings_load(void) {
     LOG("[settings] loaded %s\n", SETTINGS_FILE);
 }
 
+// (S23) The settings file is never written in place: a copy beside it, then put over it whole - an app closed or
+// a full disk in the middle left a cut file, the settings back to the defaults. And one write at a time: the menu's
+// thread, the main thread (closing the menu) and Java's (the start screen) all save.
+static pthread_mutex_t g_save_lock = PTHREAD_MUTEX_INITIALIZER;
+
 static bool copy_whole(const char *from, const char *to) {
     FILE *in = fopen(from, "rb");
     if (!in) return false;
-    FILE *out = fopen(to, "wb");
+    char tmp[1100];
+    snprintf(tmp, sizeof tmp, "%s.tmp", to);
+    FILE *out = fopen(tmp, "wb");
     bool ok = out != NULL;
     char buf[4096];
     for (size_t n; ok && (n = fread(buf, 1, sizeof buf, in)) > 0;) ok = fwrite(buf, 1, n, out) == n;
     fclose(in);
     if (out) ok &= fclose(out) == 0;
+    ok = ok && rename(tmp, to) == 0;
+    if (!ok) remove(tmp);
     return ok;
 }
 
@@ -337,11 +347,30 @@ bool settings_export(const char *path) {
     return copy_whole(SETTINGS_FILE, path);
 }
 
-bool settings_import(const char *path) { return copy_whole(path, SETTINGS_FILE); }
+bool settings_import(const char *path) {
+    pthread_mutex_lock(&g_save_lock);
+    bool ok = copy_whole(path, SETTINGS_FILE);
+    pthread_mutex_unlock(&g_save_lock);
+    return ok;
+}
 
+static void settings_write(FILE *f);
 void settings_save(void) {
-    FILE *f = fopen(SETTINGS_FILE, "w");
-    if (!f) { LOG("[settings] cannot write %s\n", SETTINGS_FILE); return; }
+    pthread_mutex_lock(&g_save_lock);
+    char tmp[1100];
+    snprintf(tmp, sizeof tmp, "%s.tmp", SETTINGS_FILE);
+    FILE *f = fopen(tmp, "w");
+    if (!f) { LOG("[settings] cannot write %s\n", tmp); pthread_mutex_unlock(&g_save_lock); return; }
+    settings_write(f);
+    bool ok = !ferror(f);
+    if (fclose(f) != 0) ok = false;
+    if (ok && rename(tmp, SETTINGS_FILE) == 0) { pthread_mutex_unlock(&g_save_lock); return; }
+    LOG("[settings] cannot write %s (the file before stays)\n", SETTINGS_FILE);
+    remove(tmp);
+    pthread_mutex_unlock(&g_save_lock);
+}
+
+static void settings_write(FILE *f) {
     fprintf(f, "# TOTKDroid settings (edited from the in-game menu: F1, Esc, or Minus+Plus on a controller)\n");
     fprintf(f, "aspect = %s\n", g_settings.aspect == ASPECT_ORIGINAL ? "original" : "unlocked");
     fprintf(f, "fullscreen = %d\n", g_settings.fullscreen);
@@ -393,5 +422,4 @@ void settings_save(void) {
     fprintf(f, "menu_tip_seen = %d\n", g_settings.menu_tip_seen);
     fprintf(f, "mods_off = %s\n", g_settings.mods_off);
     bind_settings_save(f);
-    fclose(f);
 }

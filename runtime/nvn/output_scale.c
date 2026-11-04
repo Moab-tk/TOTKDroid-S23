@@ -86,7 +86,9 @@ static double heat_factor(double now) {
     plat_device_stats(&s);
     bool known = s.headroom > 0 && s.headroom < 5;
     bool hot = (known && s.headroom >= 0.9) || s.soc_temp_c >= 83;
-    bool cool = (!known || s.headroom < 0.75) && s.soc_temp_c > 0 && s.soc_temp_c < 72;
+    // (a phone with no SoC zone, soc_temp_c -1: the headroom alone says it cooled down - it alone made it hot)
+    bool soc = s.soc_temp_c > 0;
+    bool cool = (known || soc) && (!known || s.headroom < 0.75) && (!soc || s.soc_temp_c < 72);
     double was = factor;
     if (g_settings.heat_control) {
         if (hot && factor > 0.7 && now - last_change >= 20) factor -= 0.1;

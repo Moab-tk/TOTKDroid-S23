@@ -1266,8 +1266,16 @@ void vk_views_forget(TexBackend *b) { views_forget(b); }
 uint32_t vk_view_gen;  // bumped whenever a cached view may be destroyed (exec.c's per-frame texture memo)
 static void views_forget(TexBackend *b) {
     vk_view_gen++;
-    for (int i = 0; i < VIEW_TAB; i++)
-        if (view_tab[i].b == b) { defer((Dead){.view = view_tab[i].view}); view_tab[i].b = NULL; view_tab[i].view = VK_NULL_HANDLE; }
+    // (S23: the 16384 entries read only when it has some - every texture destroyed or resized went through all of them)
+    if (!b->nviews) return;
+    for (int i = 0; i < VIEW_TAB && b->nviews; i++)
+        if (view_tab[i].b == b) {
+            defer((Dead){.view = view_tab[i].view});
+            view_tab[i].b = NULL;
+            view_tab[i].view = VK_NULL_HANDLE;
+            b->nviews--;
+        }
+    b->nviews = 0;
 }
 
 VkImageView vk_image_view(TexBackend *b, VkImageViewType type, VkFormat fmt, uint32_t lv0, uint32_t nlv, uint32_t ly0,
@@ -1292,8 +1300,9 @@ VkImageView vk_image_view(TexBackend *b, VkImageViewType type, VkFormat fmt, uin
         return VK_NULL_HANDLE;
     }
     ViewEnt *e = &view_tab[slot];
-    if (e->b) { defer((Dead){.view = e->view}); vk_view_gen++; }  // evict (16 probes taken)
+    if (e->b) { defer((Dead){.view = e->view}); vk_view_gen++; if (e->b->nviews) e->b->nviews--; }  // evict (16 probes taken)
     *e = (ViewEnt){b, k1, k2, v};
+    b->nviews++;
     return v;
 }
 
@@ -1540,6 +1549,7 @@ static VkSampler make_sampler(const NvnSamplerDesc *d, bool compare) {
     // (S23) Settings > Video > Tests: only where it means anything, textures with mipmaps filtered both ways
     if (g_settings.force_aniso > 0 && mf > 1 && !d->compare_mode && si.minFilter == VK_FILTER_LINEAR && si.magFilter == VK_FILTER_LINEAR) {
         si.maxAnisotropy = (float)(1 << (g_settings.force_aniso - 1));
+        if (si.maxAnisotropy > g_vk.props.limits.maxSamplerAnisotropy) si.maxAnisotropy = g_vk.props.limits.maxSamplerAnisotropy;  // (Vulkan: within the GPU's limit)
         si.anisotropyEnable = si.maxAnisotropy > 1;
     }
 #endif

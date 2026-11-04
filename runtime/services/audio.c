@@ -1583,6 +1583,10 @@ static void audio_out(Service *s, IpcReq *req, IpcResp *resp) {
         pthread_mutex_lock(&a->lock);
         // AudioOutBuffer {next, samples, capacity, size, offset}
         uint64_t data = b && b->size >= 0x28 ? ((uint64_t *)(uintptr_t)b->addr)[1] + ((uint64_t *)(uintptr_t)b->addr)[4] : 0;
+        // (S23) the samples read only inside the guest window and the buffer's own capacity: else played as silence
+        uint64_t cap = b && b->size >= 0x28 ? ((uint64_t *)(uintptr_t)b->addr)[2] : 0;
+        if (cap && size > cap) size = cap;
+        if (data && (data < GUEST_LO || size > GUEST_HI - GUEST_LO || data > GUEST_HI - size)) data = 0;
         if (a->queued < 64) {
             a->tags[a->queued] = tag;
             a->sizes[a->queued] = size ? size : 4096;

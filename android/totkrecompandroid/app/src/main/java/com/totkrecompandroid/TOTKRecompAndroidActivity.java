@@ -145,8 +145,12 @@ public class TOTKRecompAndroidActivity extends SDLActivity {
             Log.e(TAG, "setup: " + e);
         }
         self = this;
-        setShowWhenLocked(true);
-        setTurnScreenOn(true);
+        // (S23) over the lock screen only for test runs (testes.txt, as the test variables): for a player it put the game,
+        // its saves and its menus within reach of whoever picked up the locked phone
+        if (new File(getExternalFilesDir(null), "testes.txt").exists()) {
+            setShowWhenLocked(true);
+            setTurnScreenOn(true);
+        }
         super.onCreate(state);
         // SDL's own immersive full screen (no status / navigation bar, the camera cutout used): SDL's onCreate asks
         // for the windowed style, and keeps the bars hidden once its full screen mode is on
@@ -693,10 +697,15 @@ public class TOTKRecompAndroidActivity extends SDLActivity {
         return null;
     }
 
+    private static boolean safeName(String n) {
+        return n != null && !n.isEmpty() && !n.equals(".") && !n.equals("..") && !n.contains("/") && !n.contains("\0");
+    }
+
     private void copySaveTree(Uri tree, Doc dir, File to) throws IOException {
         if (!to.mkdirs() && !to.isDirectory()) throw new IOException("can't make " + to);
         ContentResolver cr = getContentResolver();
         for (Doc k : children(tree, dir.id)) {
+            if (!safeName(k.name)) continue;  // (S23: a name the provider made up - "..", a "/" - never leaves the folder)
             File dst = new File(to, k.name);
             if (k.dir) {
                 copySaveTree(tree, k, dst);
@@ -872,6 +881,7 @@ public class TOTKRecompAndroidActivity extends SDLActivity {
         to.mkdirs();
         ContentResolver cr = getContentResolver();
         for (Doc k : children(tree, dir.id)) {
+            if (!safeName(k.name)) continue;  // (S23: a name the provider made up - "..", a "/" - never leaves the folder)
             File dst = new File(to, k.name);
             if (k.dir) {
                 copyTree(tree, k, dst);

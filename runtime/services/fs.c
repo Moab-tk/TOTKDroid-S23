@@ -573,6 +573,9 @@ static void file(Service *s, IpcReq *req, IpcResp *resp) {
     case 1: {  // Write(option, offset, size) <- A
         int64_t off = IN(int64_t, 8), size = IN(int64_t, 16);
         IpcBuf *a = in_buf(req, 0);
+        // (S23: no buffer or a negative size - a request the SDK never sends - is an error, not a crash. The size is
+        // left as asked: cut to the descriptor's, a save written short would be lost without a word)
+        if (!a || size < 0) { resp->result = MAKE_RESULT(2, 6001); break; }
         if (strstr(f->path, "savedata"))
             LOG("[save] write %s off %lld size %lld <- guest %llx\n", f->path, (long long)off, (long long)size, (unsigned long long)a->addr);
         if (pwrite(f->fd, (void *)(uintptr_t)a->addr, (size_t)size, off) < 0) resp->result = errno_result();

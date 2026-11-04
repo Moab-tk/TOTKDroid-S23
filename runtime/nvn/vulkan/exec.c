@@ -136,6 +136,15 @@ void vk_wait_seq(uint64_t seq) {
                               .pValues = &seq};
     uint64_t t0 = SDL_GetTicksNS();
     VkResult r = vkWaitSemaphores(g_vk.dev, &wi, 10ull * 1000000000ull);
+#ifdef __ANDROID__
+    // (S23) A submission still running after 10 s: logged, then 10 s more before giving up. Before, an "else" meant
+    // for the error below took the timeout too on Android only (the gcopy_retire lines came in between): the app
+    // closed at the first 10 s stall, where the desktop goes on
+    if (r == VK_TIMEOUT) {
+        LOG("[vk] GPU did not finish submission %llu within 10 s: waiting 10 s more\n", (unsigned long long)seq);
+        r = vkWaitSemaphores(g_vk.dev, &wi, 10ull * 1000000000ull);
+    }
+#endif
     stat_wait_ns += SDL_GetTicksNS() - t0;
     cum_wait += SDL_GetTicksNS() - t0;
     wait_account(SDL_GetTicksNS() - t0);
@@ -146,8 +155,10 @@ void vk_wait_seq(uint64_t seq) {
     else if (r == VK_SUCCESS) cq_resolve_done(seq);  // (the game reads its timing counters after waiting)
 #ifdef __ANDROID__
     if (r == VK_SUCCESS) gcopy_retire(seq);
-#endif
+    if (r != VK_SUCCESS) {  // (a second timeout too: a hung GPU, reported as the device lost is)
+#else
     else {
+#endif
         extern void vk_devlost_dump(void);
         vk_devlost_dump();
         vk_device_fault_report();
@@ -1263,6 +1274,7 @@ static VkSpan guest_copy(uint64_t addr, uint64_t size, int kind) {
 // LARECOMP_SYNC_SHADERS=1 builds on first use, blocking (deterministic tests).
 typedef struct Job { void (*fn)(void *); void *arg; struct Job *next; } Job;
 static Job *jobs_head, *jobs_tail;
+static Job *ljobs_head, *ljobs_tail;  // (S23) made ahead (known pipelines): after every job a draw is behind
 static pthread_mutex_t jobs_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t jobs_cond = PTHREAD_COND_INITIALIZER;
 
@@ -1323,8 +1335,12 @@ static void worker_behind_game(void) {
 }
 #endif
 
+static _Atomic int g_worker_ids;
 static void *worker(void *a) {
     (void)a;
+    // (S23) Only the first worker takes jobs made ahead (known pipelines), one at a time with a pause: with all of them
+    // on it, the game ran at 19-23 fps for ~15 s after entering the world (2026-11-04, its CPU taken)
+    bool takes_low = atomic_fetch_add(&g_worker_ids, 1) == 0;
 #ifdef __ANDROID__
     worker_behind_game();
     {
@@ -1334,12 +1350,15 @@ static void *worker(void *a) {
 #endif
     for (;;) {
         pthread_mutex_lock(&jobs_lock);
-        while (!jobs_head) pthread_cond_wait(&jobs_cond, &jobs_lock);
-        Job *j = jobs_head;
-        jobs_head = j->next;
-        if (!jobs_head) jobs_tail = NULL;
+        while (!jobs_head && !(takes_low && ljobs_head)) pthread_cond_wait(&jobs_cond, &jobs_lock);
+        bool low = !jobs_head;
+        Job **head = low ? &ljobs_head : &jobs_head, **tail = low ? &ljobs_tail : &jobs_tail;
+        Job *j = *head;
+        *head = j->next;
+        if (!*head) *tail = NULL;
         pthread_mutex_unlock(&jobs_lock);
         job_run(j);
+        if (low) usleep(2000);
     }
     return NULL;
 }
@@ -1354,36 +1373,45 @@ static bool sync_shaders(void) {
 // translating on the game thread cost up to ~90 ms per frame on entering an area). Compiles go on to the workers.
 static pthread_mutex_t translate_lock = PTHREAD_MUTEX_INITIALIZER;  // graphics and compute share translator globals
 static Job *tjobs_head, *tjobs_tail;
+static Job *ltjobs_head, *ltjobs_tail;  // (S23) translations made ahead: after the others
 static pthread_mutex_t tjobs_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t tjobs_cond = PTHREAD_COND_INITIALIZER;
 static void *translator(void *a) {
     (void)a;
     for (;;) {
         pthread_mutex_lock(&tjobs_lock);
-        while (!tjobs_head) pthread_cond_wait(&tjobs_cond, &tjobs_lock);
-        Job *j = tjobs_head;
-        tjobs_head = j->next;
-        if (!tjobs_head) tjobs_tail = NULL;
+        while (!tjobs_head && !ltjobs_head) pthread_cond_wait(&tjobs_cond, &tjobs_lock);
+        bool low = !tjobs_head;
+        Job **head = low ? &ltjobs_head : &tjobs_head, **tail = low ? &ltjobs_tail : &tjobs_tail;
+        Job *j = *head;
+        *head = j->next;
+        if (!*head) *tail = NULL;
         pthread_mutex_unlock(&tjobs_lock);
         job_run(j);
+        if (low) usleep(1000);  // (S23: a translation made ahead, then a pause - the game's own come first)
     }
     return NULL;
 }
 static bool sync_shaders(void);
-static void run_translate(void (*fn)(void *), void *arg) {
+static void run_translate_q(void (*fn)(void *), void *arg, bool low);
+static void run_translate(void (*fn)(void *), void *arg) { run_translate_q(fn, arg, false); }
+static void run_translate_q(void (*fn)(void *), void *arg, bool low) {
     if (sync_shaders()) { fn(arg); return; }
     static bool started;
     if (!started) { started = true; pthread_t t; pthread_create(&t, NULL, translator, NULL); }
     Job *j = malloc(sizeof *j);
     j->fn = fn; j->arg = arg; j->next = NULL;
     pthread_mutex_lock(&tjobs_lock);
-    if (tjobs_tail) tjobs_tail->next = j; else tjobs_head = j;
-    tjobs_tail = j;
+    Job **head = low ? &ltjobs_head : &tjobs_head, **tail = low ? &ltjobs_tail : &tjobs_tail;
+    if (*tail) (*tail)->next = j; else *head = j;
+    *tail = j;
     pthread_cond_signal(&tjobs_cond);
     pthread_mutex_unlock(&tjobs_lock);
 }
 
-static void run_job(void (*fn)(void *), void *arg) {
+static void run_job_q(void (*fn)(void *), void *arg, bool low);
+static void run_job(void (*fn)(void *), void *arg) { run_job_q(fn, arg, false); }
+static void run_job_q(void (*fn)(void *), void *arg, bool low) {
     if (sync_shaders()) { fn(arg); return; }
     static bool started;
     if (!started) {
@@ -1407,9 +1435,11 @@ static void run_job(void (*fn)(void *), void *arg) {
     Job *j = malloc(sizeof *j);
     j->fn = fn; j->arg = arg; j->next = NULL;
     pthread_mutex_lock(&jobs_lock);
-    if (jobs_tail) jobs_tail->next = j; else jobs_head = j;
-    jobs_tail = j;
-    pthread_cond_signal(&jobs_cond);
+    Job **head = low ? &ljobs_head : &jobs_head, **tail = low ? &ljobs_tail : &jobs_tail;
+    if (*tail) (*tail)->next = j; else *head = j;
+    *tail = j;
+    if (low) pthread_cond_broadcast(&jobs_cond);  // (only the first worker takes it: wake that one too)
+    else pthread_cond_signal(&jobs_cond);
     pthread_mutex_unlock(&jobs_lock);
 }
 
@@ -1433,6 +1463,7 @@ static Job *job_unlink(Job **head, Job **tail, void *arg) {
 static Job *job_take(void *arg) {
     pthread_mutex_lock(&jobs_lock);
     Job *j = job_unlink(&jobs_head, &jobs_tail, arg);
+    if (!j) j = job_unlink(&ljobs_head, &ljobs_tail, arg);
     pthread_mutex_unlock(&jobs_lock);
     return j;
 }
@@ -1440,9 +1471,21 @@ static void translation_first(void *arg) {
     pthread_mutex_lock(&tjobs_lock);
     if (tjobs_head && tjobs_head->arg != arg) {
         Job *j = job_unlink(&tjobs_head, &tjobs_tail, arg);
+        if (!j) j = job_unlink(&ltjobs_head, &ltjobs_tail, arg);
         if (j) { j->next = tjobs_head; tjobs_head = j; if (!tjobs_tail) tjobs_tail = j; }
     }
     pthread_mutex_unlock(&tjobs_lock);
+}
+// (S23) A program or pipeline made ahead that a draw needs now: its jobs out of the low queues, to the normal ones' end
+static void job_promote(void *arg) {
+    pthread_mutex_lock(&tjobs_lock);
+    Job *j = job_unlink(&ltjobs_head, &ltjobs_tail, arg);
+    if (j) { if (tjobs_tail) tjobs_tail->next = j; else tjobs_head = j; tjobs_tail = j; }
+    pthread_mutex_unlock(&tjobs_lock);
+    pthread_mutex_lock(&jobs_lock);
+    j = job_unlink(&ljobs_head, &ljobs_tail, arg);
+    if (j) { if (jobs_tail) jobs_tail->next = j; else jobs_head = j; jobs_tail = j; pthread_cond_signal(&jobs_cond); }
+    pthread_mutex_unlock(&jobs_lock);
 }
 #ifdef __ANDROID__
 static void workers_nice(int nice) {  // (one already on the job, on a slow core: at the game's priority while it counts)
@@ -2745,6 +2788,9 @@ typedef struct {
                            // render thread on the POCO F7 Ultra: draw_writes)
     uint8_t fs_gather;  // (up_fix) the fragment stage's first gathered texture: 0 not looked yet, 1 none, 2 + its slot
     _Atomic int state;  // 0 building, 1 ready, 2 failed
+    uint64_t chash[2];  // (S23) its stages' code by content: the same shader in another run (known_prog)
+    int32_t known;      // (S23) its entry in the known list + 1 (0: none yet)
+    _Atomic bool low;   // (S23) made ahead: its translation and compile in the low queues (job_promote)
 } Prog;
 
 static VkPipelineLayout make_layout(Prog *p, int nsets, VkShaderStageFlags s0, VkShaderStageFlags s1) {
@@ -2962,12 +3008,14 @@ static void translate_program(void *arg) {
     }
     save_glsl(p->vi->msl, p->code[0], "vs");
     save_glsl(p->fi->msl, p->code[1], "fs");
-    run_job(compile_program, p);
+    run_job_q(compile_program, p, atomic_load(&p->low));
 }
 
 #define PROG_TAB 32768  // (S23: was 4096; the search below never ends on a full table)
 static struct { uint64_t key; Prog *prog; } prog_tab[PROG_TAB];
 
+static Prog *prog_get(const uint64_t code[2], const uint32_t coff[2], const uint32_t csize[2], const ShaderKey *vkey,
+                      const ShaderKey *fkey, bool low);
 static Prog *get_program(NvnProgram *np, ShaderKey *vkey, ShaderKey *fkey) {
     if (!(np->stage_mask & 1) || !(np->stage_mask & 2)) return NULL;
     // (the previous draw's program and keys again - most draws: no hashing; the code addresses are part of it, as
@@ -2981,8 +3029,21 @@ static Prog *get_program(NvnProgram *np, ShaderKey *vkey, ShaderKey *fkey) {
         return last_prog;
     last_np = np, last_code[0] = np->stages[0].code_addr, last_code[1] = np->stages[1].code_addr;
     last_vkey = *vkey, last_fkey = *fkey;
+    const uint64_t code[2] = {np->stages[0].code_addr, np->stages[1].code_addr};
+    const uint32_t coff[2] = {np->stages[0].const_offset, np->stages[1].const_offset};
+    const uint32_t csize[2] = {np->stages[0].const_size, np->stages[1].const_size};
+    return last_prog = prog_get(code, coff, csize, vkey, fkey, false);
+}
+
+// (S23) The program of these code addresses and keys: found, or made and its translation queued (get_program, and the
+// prewarm of known pipelines below - both on the render thread, which owns prog_tab)
+static void known_note_prog(Prog *p);
+static uint64_t code_content_hash(uint64_t addr);
+static void job_promote(void *arg);
+static Prog *prog_get(const uint64_t code[2], const uint32_t coff[2], const uint32_t csize[2], const ShaderKey *vkey,
+                      const ShaderKey *fkey, bool low) {
     uint64_t h = 0xcbf29ce484222325ull;
-    for (int i = 0; i < 2; i++) { uint64_t a = np->stages[i].code_addr; for (int k = 0; k < 8; k++) { h ^= (a >> (k * 8)) & 0xFF; h *= 0x100000001B3ull; } }
+    for (int i = 0; i < 2; i++) { uint64_t a = code[i]; for (int k = 0; k < 8; k++) { h ^= (a >> (k * 8)) & 0xFF; h *= 0x100000001B3ull; } }
     h = hash_words(h, vkey, sizeof *vkey);  // (8 bytes a step: the table is in memory only)
     for (int i = 0; i < 8; i++) { h ^= fkey->rt_kind[i]; h *= 0x100000001B3ull; }
 #ifdef __ANDROID__
@@ -2991,19 +3052,25 @@ static Prog *get_program(NvnProgram *np, ShaderKey *vkey, ShaderKey *fkey) {
     if (!h) h = 1;
     uint32_t slot = (uint32_t)(h ^ (h >> 31)) & (PROG_TAB - 1);
     while (prog_tab[slot].key && prog_tab[slot].key != h) slot = (slot + 1) & (PROG_TAB - 1);
-    if (prog_tab[slot].key) return last_prog = prog_tab[slot].prog;
+    if (prog_tab[slot].key) {
+        Prog *f = prog_tab[slot].prog;
+        if (!low && atomic_load(&f->low)) { atomic_store(&f->low, false); job_promote(f); }  // (made ahead: wanted now)
+        return f;
+    }
     Prog *p = calloc(1, sizeof *p);
-    last_prog = p;
+    p->low = low;
     prog_tab[slot].key = h;
     prog_tab[slot].prog = p;
     for (int i = 0; i < 2; i++) {
-        p->code[i] = np->stages[i].code_addr;
-        p->cmax[i] = np->stages[i].const_offset ? np->stages[i].const_offset : 0x10000;
-        p->const_bytes[i] = np->stages[i].const_offset ? np->stages[i].const_size : 0;
+        p->code[i] = code[i];
+        p->cmax[i] = coff[i] ? coff[i] : 0x10000;
+        p->const_bytes[i] = coff[i] ? csize[i] : 0;
+        p->chash[i] = code_content_hash(code[i]);
     }
-    p->vkey = *vkey;
-    p->fkey = *fkey;
-    run_translate(translate_program, p);
+    memcpy(&p->vkey, vkey, sizeof p->vkey);
+    memcpy(&p->fkey, fkey, sizeof p->fkey);
+    known_note_prog(p);
+    run_translate_q(translate_program, p, low);
     return p;
 }
 
@@ -3235,7 +3302,7 @@ typedef struct {
     PipeFx fx;
 } PipeKey;
 
-typedef struct { PipeKey k; uint64_t hash; VkPipeline pipe; _Atomic int state; } Pipe;  // state: 0 building, 1 ready, 2 failed
+typedef struct { PipeKey k; uint64_t hash; VkPipeline pipe; _Atomic int state; _Atomic bool low; } Pipe;  // state: 0 building, 1 ready, 2 failed
 #define PIPE_TAB 65536  // (S23: was 8192, as PROG_TAB)
 static struct { uint64_t key; Pipe *pipe; } pipe_tab[PIPE_TAB];
 
@@ -5807,12 +5874,14 @@ static int g_cs_n;  // (compute program table below)
 // In-place reboot (device.c backend_reset; GPU idle): drop what is keyed by guest addresses - programs by code
 // address (the old Prog / Pipe objects are leaked, so pipeline keys holding their pointers can't collide), compute
 // programs, shared copies - and the heap import: its pages are replaced (re-imported on first use).
+static void prewarm_reset(void);
 void vk_exec_reset(void) {
 #ifdef __ANDROID__
     vk_vamm_reset();
 #endif
     memset(prog_tab, 0, sizeof prog_tab);
     memset(pipe_tab, 0, sizeof pipe_tab);
+    prewarm_reset();
     g_cs_n = 0;
     gcopy_gen++;
     if (gmem_buf) {
@@ -6134,6 +6203,12 @@ static void build_compute(void *arg) {
     if (!spv) { atomic_store(&cp->p.state, 2); return; }
     cp->p.nbinds = vk_reflect(spv, n, cp->p.binds, MAX_BIND);
     VkShaderModule m = vk_module(spv, n);
+    if (!m) {  // (S23: a module the driver refused - a null one in the pipeline is undefined; as a failed build)
+        LOG("[compute] %llx: shader module not created\n", (unsigned long long)cp->code_addr);
+        atomic_store(&cp->p.state, 2);
+        free(spv);
+        return;
+    }
     cp->p.layout = make_layout(&cp->p, 1, VK_SHADER_STAGE_COMPUTE_BIT, 0);
     VkSpecializationMapEntry me[3] = {{0, 0, 4}, {1, 4, 4}, {2, 8, 4}};
     VkSpecializationInfo spec = {3, me, 12, cp->local};
@@ -6158,7 +6233,9 @@ static void build_compute(void *arg) {
     free(spv);
 }
 
-static struct CsEnt { uint64_t addr; CsProg *cp; } g_cs_tab[256];  // compute programs by code address
+// (S23: 2048, was 256 - one past the table was translated again at every dispatch, never kept)
+#define CS_TAB 2048
+static struct CsEnt { uint64_t addr; CsProg *cp; } g_cs_tab[CS_TAB];  // compute programs by code address
 
 static CsProg *compute_program(NvnProgram *np) {
     NvnShaderStage *ss = &np->stages[5];
@@ -6168,7 +6245,7 @@ static CsProg *compute_program(NvnProgram *np) {
     for (int i = 0; i < n; i++) if (tab[i].addr == ss->code_addr) return tab[i].cp;
     CsProg *cp = calloc(1, sizeof *cp);
     cp->code_addr = ss->code_addr;
-    if (n < 256) { tab[n].addr = ss->code_addr; tab[n].cp = cp; g_cs_n = n + 1; }
+    if (n < CS_TAB) { tab[n].addr = ss->code_addr; tab[n].cp = cp; g_cs_n = n + 1; }
     pthread_mutex_lock(&translate_lock);  // (the translator's globals too: the translator thread sets them for graphics)
     maxwell_gmem_base = HEAP_BASE;
     maxwell_gmem_size = HEAP_MAX;
@@ -6483,6 +6560,278 @@ void vk_pick_report(void) {
     }
     pick.n = 0;
     pick.draws = 0;
+}
+
+// ================================================================== (S23) pipelines known from earlier runs
+// The first time an area is entered dozens of programs and hundreds of pipelines are made while it is played: the draws
+// that need them are skipped or wait (wait_built: the 186-286 ms frames of 2026-10-31). Each program a draw makes (its
+// stages by content, its keys) and each pipeline (its key) go to a list, cache/known_pipelines.bin (saved with the
+// pipeline cache: vk_pipeline_cache_save). In a later run, when the game sets a program's shaders (nvnProgramSetShaders,
+// as it loads an area) whose code the list knows, the render thread makes that program and, once its shaders are
+// built, the pipelines it had: while the area loads, before its first draw. A wrong guess only costs a build; a key
+// from another build of the app or another GPU is never used (the file's stamp). LARECOMP_NO_PREWARM=1: off.
+typedef struct { uint64_t chash[2]; ShaderKey vkey, fkey; } KnownProg;
+typedef struct { uint32_t prog; PipeKey k; } KnownPipe;  // (k.prog NULL: the program is the entry `prog`)
+#define KNOWN_PROGS 32768
+#define KNOWN_PIPES 65536
+#define KNOWN_MAGIC 0x314B5057u  // "WPK1"
+static KnownProg *kn_prog;
+static KnownPipe *kn_pipe;
+static uint32_t kn_nprog, kn_npipe, kn_saved_prog, kn_saved_pipe;
+static uint32_t kn_prog_map[KNOWN_PROGS * 2], kn_pipe_map[KNOWN_PIPES * 2];  // identity hash -> entry + 1
+static uint32_t *kn_by_hash, *kn_pipes_of, *kn_pipes_at;  // (load: programs sorted by content; each program's pipelines)
+static uint32_t kn_file_progs;
+static pthread_mutex_t kn_lock = PTHREAD_MUTEX_INITIALIZER;
+static int kn_on = -1;
+static uint64_t stat_prewarm_progs, stat_prewarm_pipes;
+
+static bool known_on(void) {
+    if (kn_on < 0) kn_on = !getenv("LARECOMP_NO_PREWARM") && !sync_shaders();
+    return kn_on;
+}
+
+// The code's first 4 KB (or up to the window's end): the same shader at another address in another run
+static uint64_t code_content_hash(uint64_t addr) {
+    if (!addr || addr < GUEST_LO || addr >= GUEST_HI) return 0;
+    uint64_t n = GUEST_HI - addr < 4096 ? GUEST_HI - addr : 4096;
+    return hash_words(0x9AE16A3B2F90404Full, (const void *)(uintptr_t)addr, (size_t)n);
+}
+
+static uint64_t kn_prog_id(const KnownProg *e) { return hash_words(0x51ED270B27A8C3E1ull, e, sizeof *e) | 1; }
+static uint64_t kn_pipe_id(const KnownPipe *e) { return hash_words(0x2545F4914F6CDD1Dull, e, sizeof *e) | 1; }
+
+// The entry of e in a map (map: 2 * cap slots of entry + 1), or where it goes (*slot); entries: the list's records
+static uint32_t kn_find(uint32_t *map, uint32_t cap, uint64_t id, const void *e, const void *entries, size_t esize,
+                        uint32_t *slot) {
+    uint32_t mask = cap * 2 - 1, i = (uint32_t)(id ^ (id >> 32)) & mask;
+    for (uint32_t probes = 0; probes <= mask; probes++, i = (i + 1) & mask) {
+        if (!map[i]) { *slot = i; return 0; }
+        if (!memcmp((const uint8_t *)entries + (size_t)(map[i] - 1) * esize, e, esize)) return map[i];
+    }
+    *slot = UINT32_MAX;
+    return 0;
+}
+
+static void kn_stamp(char out[128]) {
+    memset(out, 0, 128);
+    snprintf(out, 128, "%s %s|%s|%u", __DATE__, __TIME__, g_vk.props.deviceName, g_vk.props.driverVersion);
+}
+
+// (the render thread, once: the file's records, then this run's after them)
+static void known_load(void) {
+    static bool done;
+    if (done) return;
+    done = true;
+    kn_prog = calloc(KNOWN_PROGS, sizeof *kn_prog);
+    kn_pipe = calloc(KNOWN_PIPES, sizeof *kn_pipe);
+    if (!kn_prog || !kn_pipe) { kn_on = 0; return; }
+    FILE *f = fopen("cache/known_pipelines.bin", "rb");
+    if (!f) return;
+    uint32_t hdr[4];
+    char stamp[128], want[128];
+    kn_stamp(want);
+    bool ok = fread(hdr, sizeof hdr, 1, f) == 1 && fread(stamp, sizeof stamp, 1, f) == 1 && hdr[0] == KNOWN_MAGIC &&
+              hdr[1] == (uint32_t)(sizeof(KnownProg) | sizeof(KnownPipe) << 16) && hdr[2] <= KNOWN_PROGS &&
+              hdr[3] <= KNOWN_PIPES && !memcmp(stamp, want, sizeof stamp) &&
+              fread(kn_prog, sizeof *kn_prog, hdr[2], f) == hdr[2] && fread(kn_pipe, sizeof *kn_pipe, hdr[3], f) == hdr[3];
+    fclose(f);
+    if (!ok) { LOG("[prewarm] cache/known_pipelines.bin is from another build or GPU: started again\n"); return; }
+    uint32_t slot;
+    for (uint32_t i = 0; i < hdr[2]; i++)
+        if (!kn_find(kn_prog_map, KNOWN_PROGS, kn_prog_id(&kn_prog[i]), &kn_prog[i], kn_prog, sizeof *kn_prog, &slot) &&
+            slot != UINT32_MAX)
+            kn_prog_map[slot] = i + 1;
+    for (uint32_t i = 0; i < hdr[3]; i++)
+        if (kn_pipe[i].prog < hdr[2] &&
+            !kn_find(kn_pipe_map, KNOWN_PIPES, kn_pipe_id(&kn_pipe[i]), &kn_pipe[i], kn_pipe, sizeof *kn_pipe, &slot) &&
+            slot != UINT32_MAX)
+            kn_pipe_map[slot] = i + 1;
+    kn_nprog = kn_saved_prog = kn_file_progs = hdr[2];
+    kn_npipe = kn_saved_pipe = hdr[3];
+    // the file's programs by content (binary search), and each one's pipelines (counting sort by program)
+    kn_by_hash = malloc(sizeof *kn_by_hash * (kn_file_progs ? kn_file_progs : 1));
+    kn_pipes_at = calloc(kn_file_progs + 1, sizeof *kn_pipes_at);
+    kn_pipes_of = malloc(sizeof *kn_pipes_of * (kn_npipe ? kn_npipe : 1));
+    if (!kn_by_hash || !kn_pipes_at || !kn_pipes_of) { kn_file_progs = 0; return; }
+    for (uint32_t i = 0; i < kn_file_progs; i++) kn_by_hash[i] = i;
+    for (uint32_t i = 1; i < kn_file_progs; i++) {  // (insertion sort: a few thousand entries, once)
+        uint32_t v = kn_by_hash[i], j = i;
+        const uint64_t *a = kn_prog[v].chash;
+        while (j > 0) {
+            const uint64_t *b = kn_prog[kn_by_hash[j - 1]].chash;
+            if (b[0] < a[0] || (b[0] == a[0] && b[1] <= a[1])) break;
+            kn_by_hash[j] = kn_by_hash[j - 1];
+            j--;
+        }
+        kn_by_hash[j] = v;
+    }
+    for (uint32_t i = 0; i < kn_npipe; i++) if (kn_pipe[i].prog < kn_file_progs) kn_pipes_at[kn_pipe[i].prog + 1]++;
+    for (uint32_t i = 0; i < kn_file_progs; i++) kn_pipes_at[i + 1] += kn_pipes_at[i];
+    uint32_t *fill = calloc(kn_file_progs + 1, sizeof *fill);
+    if (!fill) { kn_file_progs = 0; return; }
+    for (uint32_t i = 0; i < kn_npipe; i++) {
+        uint32_t pr = kn_pipe[i].prog;
+        if (pr < kn_file_progs) kn_pipes_of[kn_pipes_at[pr] + fill[pr]++] = i;
+    }
+    free(fill);
+    LOG("[prewarm] %u programs and %u pipelines known from earlier runs\n", kn_file_progs, kn_npipe);
+}
+
+static void known_note_prog(Prog *p) {
+    if (!known_on()) return;
+    known_load();
+    KnownProg e;
+    memset(&e, 0, sizeof e);
+    e.chash[0] = p->chash[0], e.chash[1] = p->chash[1];
+    memcpy(&e.vkey, &p->vkey, sizeof e.vkey), memcpy(&e.fkey, &p->fkey, sizeof e.fkey);  // (bytes: padding too, hashed)
+    if (!e.chash[0] || !e.chash[1]) return;
+    pthread_mutex_lock(&kn_lock);
+    uint32_t slot, at = kn_find(kn_prog_map, KNOWN_PROGS, kn_prog_id(&e), &e, kn_prog, sizeof *kn_prog, &slot);
+    if (!at && slot != UINT32_MAX && kn_nprog < KNOWN_PROGS) {
+        kn_prog[kn_nprog] = e;
+        at = kn_prog_map[slot] = ++kn_nprog;
+    }
+    pthread_mutex_unlock(&kn_lock);
+    p->known = (int32_t)at;
+}
+
+static void known_note_pipe(const PipeKey *k) {
+    if (!known_on() || !k->prog || !k->prog->known) return;
+    KnownPipe e;
+    memset(&e, 0, sizeof e);
+    e.prog = (uint32_t)k->prog->known - 1;
+    memcpy(&e.k, k, sizeof e.k);
+    e.k.prog = NULL;
+    pthread_mutex_lock(&kn_lock);
+    uint32_t slot;
+    if (!kn_find(kn_pipe_map, KNOWN_PIPES, kn_pipe_id(&e), &e, kn_pipe, sizeof *kn_pipe, &slot) && slot != UINT32_MAX &&
+        kn_npipe < KNOWN_PIPES) {
+        kn_pipe[kn_npipe] = e;
+        kn_pipe_map[slot] = ++kn_npipe;
+    }
+    pthread_mutex_unlock(&kn_lock);
+}
+
+// (vk_pipeline_cache_save, any thread) the list to disk when it grew
+void vk_known_save(void) {
+    if (kn_on <= 0 || !kn_prog) return;
+    pthread_mutex_lock(&kn_lock);
+    if (kn_nprog == kn_saved_prog && kn_npipe == kn_saved_pipe) { pthread_mutex_unlock(&kn_lock); return; }
+    uint32_t hdr[4] = {KNOWN_MAGIC, (uint32_t)(sizeof(KnownProg) | sizeof(KnownPipe) << 16), kn_nprog, kn_npipe};
+    char stamp[128];
+    kn_stamp(stamp);
+    mkdir("cache", 0755);
+    FILE *f = fopen("cache/known_pipelines.bin.tmp", "wb");
+    bool ok = f && fwrite(hdr, sizeof hdr, 1, f) == 1 && fwrite(stamp, sizeof stamp, 1, f) == 1 &&
+              fwrite(kn_prog, sizeof *kn_prog, kn_nprog, f) == kn_nprog && fwrite(kn_pipe, sizeof *kn_pipe, kn_npipe, f) == kn_npipe;
+    if (f && fclose(f) != 0) ok = false;
+    if (ok && rename("cache/known_pipelines.bin.tmp", "cache/known_pipelines.bin") == 0) {
+        kn_saved_prog = kn_nprog, kn_saved_pipe = kn_npipe;
+        LOG("[prewarm] %u programs and %u pipelines saved\n", kn_nprog, kn_npipe);
+    } else remove("cache/known_pipelines.bin.tmp");
+    pthread_mutex_unlock(&kn_lock);
+}
+
+// The game's threads set a program's shaders (nvn/objects.c): queued for the render thread
+typedef struct { uint64_t code[2]; uint32_t coff[2], csize[2]; } PrewarmReq;
+#define PREWARM_Q 1024
+static PrewarmReq pw_q[PREWARM_Q];
+static uint32_t pw_head, pw_tail;
+static pthread_mutex_t pw_lock = PTHREAD_MUTEX_INITIALIZER;
+
+void vk_prewarm_program(const NvnProgram *np) {
+    if (!known_on() || !np || (np->stage_mask & 3) != 3) return;
+    pthread_mutex_lock(&pw_lock);
+    if (pw_tail - pw_head < PREWARM_Q) {
+        PrewarmReq *r = &pw_q[pw_tail++ % PREWARM_Q];
+        for (int i = 0; i < 2; i++)
+            r->code[i] = np->stages[i].code_addr, r->coff[i] = np->stages[i].const_offset, r->csize[i] = np->stages[i].const_size;
+    }
+    pthread_mutex_unlock(&pw_lock);
+}
+
+// Programs made ahead whose shaders are still building: their known pipelines follow once they are ready
+typedef struct { Prog *p; uint32_t known; } PrewarmWait;
+#define PREWARM_WAIT 8192
+static PrewarmWait pw_wait[PREWARM_WAIT];
+static uint32_t pw_nwait;
+static uint64_t pw_gen = 1;  // (a reboot: what was queued belongs to the old game)
+
+static void prewarm_pipes_of(Prog *p, uint32_t known) {
+    for (uint32_t j = kn_pipes_at[known]; j < kn_pipes_at[known + 1]; j++) {
+        PipeKey k;
+        memcpy(&k, &kn_pipe[kn_pipes_of[j]].k, sizeof k);  // (as a draw makes it: every byte, padding too)
+        k.prog = p;
+        uint64_t ph = hash_words(0xcbf29ce484222325ull, &k, sizeof k);
+        if (!ph) ph = 1;
+        uint32_t pslot = (uint32_t)(ph ^ (ph >> 29)) & (PIPE_TAB - 1);
+        while (pipe_tab[pslot].key && pipe_tab[pslot].key != ph) pslot = (pslot + 1) & (PIPE_TAB - 1);
+        if (pipe_tab[pslot].pipe) continue;
+        Pipe *pp = calloc(1, sizeof *pp);
+        if (!pp) return;
+        pp->k = k;
+        pp->low = true;
+        pipe_tab[pslot].key = ph;
+        pipe_tab[pslot].pipe = pp;
+        run_job_q(build_pipeline, pp, true);
+        stat_prewarm_pipes++;
+    }
+}
+
+// (the render thread, as each command list starts)
+static void prewarm_run(void) {
+    if (!known_on()) return;
+    known_load();
+    if (!kn_file_progs) { pthread_mutex_lock(&pw_lock); pw_head = pw_tail; pthread_mutex_unlock(&pw_lock); return; }
+    static uint64_t seen[4096];  // (code pairs looked at already: the game sets some programs again and again)
+    for (int n = 0; n < 64; n++) {
+        PrewarmReq r;
+        pthread_mutex_lock(&pw_lock);
+        bool any = pw_head != pw_tail;
+        if (any) r = pw_q[pw_head++ % PREWARM_Q];
+        pthread_mutex_unlock(&pw_lock);
+        if (!any) break;
+        uint64_t key = (r.code[0] * 0x9E3779B97F4A7C15ull) ^ r.code[1] ^ pw_gen, *sl = &seen[(key ^ (key >> 29)) & 4095];
+        if (*sl == key) continue;
+        *sl = key;
+        const uint64_t ch[2] = {code_content_hash(r.code[0]), code_content_hash(r.code[1])};
+        uint32_t lo = 0, hi = kn_file_progs;  // (the first program of this content)
+        while (lo < hi) {
+            uint32_t mid = (lo + hi) / 2;
+            const uint64_t *b = kn_prog[kn_by_hash[mid]].chash;
+            if (b[0] < ch[0] || (b[0] == ch[0] && b[1] < ch[1])) lo = mid + 1;
+            else hi = mid;
+        }
+        for (uint32_t i = lo; i < kn_file_progs; i++) {
+            const KnownProg *e = &kn_prog[kn_by_hash[i]];
+            if (e->chash[0] != ch[0] || e->chash[1] != ch[1]) break;
+            Prog *p = prog_get(r.code, r.coff, r.csize, &e->vkey, &e->fkey, true);
+            if (!p) continue;
+            stat_prewarm_progs++;
+            if (atomic_load(&p->state) == 1) prewarm_pipes_of(p, kn_by_hash[i]);
+            else if (atomic_load(&p->state) == 0 && pw_nwait < PREWARM_WAIT) pw_wait[pw_nwait++] = (PrewarmWait){p, kn_by_hash[i]};
+        }
+    }
+    for (uint32_t i = 0; i < pw_nwait;) {  // (shaders built since: their pipelines now)
+        int stt = atomic_load(&pw_wait[i].p->state);
+        if (!stt) { i++; continue; }
+        if (stt == 1) prewarm_pipes_of(pw_wait[i].p, pw_wait[i].known);
+        pw_wait[i] = pw_wait[--pw_nwait];
+    }
+    static uint64_t logged;
+    if ((stat_prewarm_progs || stat_prewarm_pipes) && stat_prewarm_progs + stat_prewarm_pipes >= logged + 200) {
+        logged = stat_prewarm_progs + stat_prewarm_pipes;
+        LOG("[prewarm] %llu programs and %llu pipelines made ahead so far\n", (unsigned long long)stat_prewarm_progs,
+            (unsigned long long)stat_prewarm_pipes);
+    }
+}
+
+static void prewarm_reset(void) {  // (vk_exec_reset: the tables are emptied)
+    pthread_mutex_lock(&pw_lock);
+    pw_head = pw_tail;
+    pthread_mutex_unlock(&pw_lock);
+    pw_nwait = 0;
+    pw_gen++;
 }
 
 static void draw(CmdRec *r, bool indexed) {
@@ -6953,12 +7302,14 @@ static void draw_(CmdRec *r, bool indexed) {
         uint32_t pslot = (uint32_t)(ph ^ (ph >> 29)) & (PIPE_TAB - 1);
         while (pipe_tab[pslot].key && pipe_tab[pslot].key != ph) pslot = (pslot + 1) & (PIPE_TAB - 1);
         pp = pipe_tab[pslot].pipe;
+        if (pp && atomic_load(&pp->low) && !atomic_load(&pp->state)) { atomic_store(&pp->low, false); job_promote(pp); }
         if (!pp) {
             pp = calloc(1, sizeof *pp);
             pp->k = k;
             pipe_tab[pslot].key = ph;
             pipe_tab[pslot].pipe = pp;
             run_job(build_pipeline, pp);
+            known_note_pipe(&k);
         }
         // Verification rebuilds the original key to detect missing invalidations during later device tests.
         if (hit && memcmp(&k, &last_pipeline->k, sizeof k)) {
@@ -8318,6 +8669,7 @@ static bool render_enable_on(void) {
 
 static void exec_list(uint64_t handle, int depth) {
     uint64_t p = handle;
+    if (!depth) prewarm_run();  // (S23: pipelines known from earlier runs, made ahead)
     for (int guard = 0; guard < 10000000; guard++) {
         CmdRec *r = (CmdRec *)(uintptr_t)p;
         void *x = r->extra;
@@ -8463,6 +8815,7 @@ static void exec_list(uint64_t handle, int depth) {
         case CMD_CLEAR_COLOR: {
             snap_reason = "clear-color"; snapshots_invalidate(NULL);
             int index = (int)r->x[0];
+            if (index < 0) break;  // (S23: below every check that follows - a negative one read before the targets)
             static long clears_from = -1;  // (LARECOMP_LOG_CLEARS=<from frame>)
             if (clears_from < 0) clears_from = getenv("LARECOMP_LOG_CLEARS") ? atol(getenv("LARECOMP_LOG_CLEARS")) : 0x7fffffffL;
             if ((long)renderer_present_count() >= clears_from && index < st.rt.ncolor && st.rt.color[index]) {

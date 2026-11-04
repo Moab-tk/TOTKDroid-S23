@@ -138,6 +138,7 @@ typedef struct TexBackend {
     int reg;  // slot in textures.c's live list + 1 (a reboot destroys them all)
     VkFormat fmt_twin;  // (Android) a format-listed render target (textures.c, UBWC): the one other view format allowed
     bool fmt_listed;
+    uint32_t nviews;  // (S23) its entries in textures.c's view table: none, no scan of the table (views_forget)
 } TexBackend;
 
 VkFormat vk_view_format(NvnTexture *t, VkFormat vf);  // the format a view asking for vf gets (textures.c)

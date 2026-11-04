@@ -22,7 +22,10 @@ extern "C" bool vk_imgui_backend_init(void) {
     ii.Device = g_vk.dev;
     ii.QueueFamily = g_vk.qfam;
     ii.Queue = g_vk.queue;
-    ii.DescriptorPoolSize = 64;
+    // (S23) a place for each texture the menus show: 64 ran out once the touch controls' item icons came (one per
+    // weapon, bow, shield and rune seen - ui/touch_controls.mm keeps at most ICON_CACHE of them), and ImGui writes into
+    // the set it couldn't get. The fonts, the skins and the start screen's background take a few more.
+    ii.DescriptorPoolSize = 512;
     ii.MinImageCount = 2;
     ii.ImageCount = (g_vk.sc_count > 3 ? g_vk.sc_count : 3) + 1;  // vertex buffers rotate per image: cover frames in flight
     ii.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
@@ -43,6 +46,10 @@ extern "C" void vk_imgui_backend_shutdown(void) {
     vkDeviceWaitIdle(g_vk.dev);
     ImGui_ImplVulkan_Shutdown();
 }
+
+// The textures made below, to give back (vk_imgui_texture_free)
+#define MAX_TEX 512
+static struct { VkDescriptorSet set; VkImage img; VmaAllocation mem; VkImageView view; } g_tex[MAX_TEX];
 
 // A static RGBA8 image for ImGui (start screen background). Returns the ImTextureID.
 extern "C" uint64_t vk_imgui_texture_rgba(const void *rgba, int w, int h) {
@@ -75,5 +82,24 @@ extern "C" uint64_t vk_imgui_texture_rgba(const void *rgba, int w, int h) {
     vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     VkImageView view;
     if (vkCreateImageView(g_vk.dev, &vi, NULL, &view) != VK_SUCCESS) return 0;
-    return (uint64_t)ImGui_ImplVulkan_AddTexture(vk_default_sampler(true), view, VK_IMAGE_LAYOUT_GENERAL);
+    VkDescriptorSet set = ImGui_ImplVulkan_AddTexture(vk_default_sampler(true), view, VK_IMAGE_LAYOUT_GENERAL);
+    for (int i = 0; i < MAX_TEX; i++)
+        if (!g_tex[i].set) { g_tex[i] = {set, img, mem, view}; break; }
+    return (uint64_t)set;
+}
+
+// (S23) A texture made above, given back: its place in the menu's pool, the image and its memory. The GPU idle first
+// (the start screen frees its background as it hands the window to the game: launcher.mm). Each return to the start
+// screen made its background again, and the old one stayed in the GPU's memory.
+extern "C" void vk_imgui_texture_free(uint64_t id) {
+    if (!id) return;
+    for (int i = 0; i < MAX_TEX; i++) {
+        if ((uint64_t)g_tex[i].set != id) continue;
+        vkDeviceWaitIdle(g_vk.dev);
+        ImGui_ImplVulkan_RemoveTexture(g_tex[i].set);
+        vkDestroyImageView(g_vk.dev, g_tex[i].view, NULL);
+        vmaDestroyImage(g_vk.vma, g_tex[i].img, g_tex[i].mem);
+        g_tex[i] = {};
+        return;
+    }
 }

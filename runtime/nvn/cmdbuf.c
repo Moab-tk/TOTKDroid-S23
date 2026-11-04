@@ -714,24 +714,29 @@ static void copy_list(Cpu *c, NvnCmdBuf *cb, uint64_t p) {
         p += size;
     }
 }
+// (S23) The lists 64 at a time, all of them: past 64 the rest were left out without a word. Their handles copied out
+// first, each 64 (rec may call the guest back: its registers change; the array itself is the game's memory).
+static void copy_lists(Cpu *c, uint64_t self, int n, const void *list) {
+    const uint64_t *src = (const uint64_t *)list;
+    for (int at = 0; at < n; at += 64) {
+        uint64_t handles[64];
+        int k = n - at < 64 ? n - at : 64;
+        memcpy(handles, src + at, (size_t)k * sizeof *handles);
+        for (int i = 0; i < k; i++) copy_list(c, cb_of(self), handles[i]);
+    }
+}
 // CallCommands too: the lists it calls live in control memory, which NVN reads as this is recorded; BOTW records
 // over them before this list is submitted. (LARECOMP_CALL_REFS=1: refer to them, as before)
 NVN(nvnCommandBufferCallCommands) {
     int n = (int)A(1);
     nvn_check_handles(c, "CallCommands", n, AP(2));
     if (ENV("LARECOMP_CALL_REFS")) { record_copy(c, CMD_CALL, 2, (uint32_t)n * 8); return; }
-    uint64_t self = A(0), handles[64];
-    if (n > 64) n = 64;
-    memcpy(handles, AP(2), n * sizeof *handles);
-    for (int i = 0; i < n; i++) copy_list(c, cb_of(self), handles[i]);
+    copy_lists(c, A(0), n, AP(2));
 }
 NVN(nvnCommandBufferCopyCommands) {
     int n = (int)A(1);
     nvn_check_handles(c, "CopyCommands", n, AP(2));
-    uint64_t self = A(0), handles[64];
-    if (n > 64) n = 64;
-    memcpy(handles, AP(2), n * sizeof *handles);  // (rec may call the guest back: its registers change)
-    for (int i = 0; i < n; i++) copy_list(c, cb_of(self), handles[i]);
+    copy_lists(c, A(0), n, AP(2));
 }
 NVN(nvnCommandBufferInsertDebugMarker) { (void)c; }
 NVN(nvnCommandBufferInsertDebugMarkerDynamic) { (void)c; }

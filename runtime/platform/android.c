@@ -934,6 +934,18 @@ static void adpf_work_locked(int slot, uint64_t work_ns, uint64_t target_ns, uin
     if (!s_split) {
         // --- Single session mode (both threads in session[0]) ---
         if (!session[0]) {
+            // (S23: a system that has the library but makes no session was asked again every frame, and the presenting
+            // thread pinned again each time: once a second now, and after 10 refusals no more - ADPF off)
+            static uint64_t next_try_ns;
+            static int refused;
+            uint64_t now_ns = plat_now_ns();
+            if (now_ns < next_try_ns) return;
+            next_try_ns = now_ns + 1000000000ull;
+            if (refused >= 10) {
+                state[0] = -1;
+                LOG("[android] performance hint session refused %d times: off\n", refused);
+                return;
+            }
             if (slot == 0) pin_to_fastest_cores();
             int32_t tids[2];
             int ntids = 0;
@@ -949,6 +961,7 @@ static void adpf_work_locked(int slot, uint64_t work_ns, uint64_t target_ns, uin
                 } else {
                     s_errors++;
                     s_last_error = errno;
+                    refused++;
                 }
             }
         } else if (s_extra_dirty && set_threads && s_presenting_tid > 0 && s_render_tid > 0) {

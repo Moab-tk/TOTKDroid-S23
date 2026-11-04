@@ -2,6 +2,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,6 +10,7 @@
 #include <unistd.h>
 
 #include "../../paths.h"
+#include "../../platform.h"
 #include "../../settings.h"
 #include "../../ui/menu.h"
 #include "vk.h"
@@ -889,7 +891,32 @@ void vk_pipeline_cache_save(void) {
         }
     }
     free(data);
+#ifdef __ANDROID__
+    extern void vk_known_save(void);  // (S23: the pipelines known for the next run - vulkan/exec.c)
+    vk_known_save();
+#endif
 }
+
+#ifdef __ANDROID__
+// (S23) The periodic save on a thread of its own: on the UI thread, which reads the touches and the controllers, writing
+// a pipeline cache of several MB held them back every 30 s while it grew
+static _Atomic int g_pcache_saving;
+static void *pcache_save_thread(void *arg) {
+    plat_thread_unpin();
+    extern void vk_known_save(void);
+    if (arg) vk_pipeline_cache_save();  // (it saves the known list too)
+    else vk_known_save();
+    atomic_store(&g_pcache_saving, 0);
+    return NULL;
+}
+static void pcache_save_async(bool cache) {  // (cache: the pipeline cache and the known list; else the list alone)
+    int no = 0;
+    if (!atomic_compare_exchange_strong(&g_pcache_saving, &no, 1)) return;
+    pthread_t t;
+    if (pthread_create(&t, NULL, pcache_save_thread, cache ? (void *)1 : NULL) == 0) pthread_detach(t);
+    else atomic_store(&g_pcache_saving, 0);
+}
+#endif
 
 // ================================================================== swapchain
 static bool swapchain_readback = true;  // (Android: false where the surface can't be a transfer source)
@@ -2132,9 +2159,11 @@ int ui_run(void) {
                 last = now;
                 size_t sz = 0;
                 if (vkGetPipelineCacheData(g_vk.dev, g_vk.pcache, &sz, NULL) == VK_SUCCESS && sz > saved + 65536) {
-                    vk_pipeline_cache_save();
+                    pcache_save_async(true);
                     saved = sz;
                     LOG("[vk] pipeline cache saved (%zu KB)\n", sz >> 10);
+                } else {
+                    pcache_save_async(false);  // (S23: the known list grows when the cache doesn't - it only writes what changed)
                 }
             }
         }

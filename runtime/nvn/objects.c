@@ -274,7 +274,16 @@ NVN(nvnQueueWaitSync) { RET(1); }
 
 // ================================================================== sync / event
 NVN(nvnSyncInitialize) { SET_HOST(A(0), calloc(1, sizeof(NvnSync))); RET(1); }
-NVN(nvnSyncFinalize) { free(HOST(NvnSync, A(0))); SET_HOST(A(0), 0); }
+NVN(nvnSyncFinalize) {
+#ifdef __ANDROID__
+    // (S23) the render thread may still have this fence queued (it writes its submission into the NvnSync): up to that
+    // request first - only that one, not the whole queue (vulkan/async.c; at once when it already ran)
+    NvnSync *gone = HOST(NvnSync, A(0));
+    if (gone && vk_async_on()) vk_async_wait_id(gone->lseq);
+#endif
+    free(HOST(NvnSync, A(0)));
+    SET_HOST(A(0), 0);
+}
 NVN(nvnSyncSetDebugLabel) { (void)c; }
 void renderer_flush(void);
 NVN(nvnSyncWait) {  // NVN_SYNC_WAIT_RESULT_ALREADY_SIGNALED
@@ -1532,7 +1541,15 @@ NvnDescPool *nvn_find_pool(NvnDescPool **reg, uint64_t guest_pool) {
 
 // ================================================================== programs
 NVN(nvnProgramInitialize) { SET_HOST(A(0), calloc(1, sizeof(NvnProgram))); RET(1); }
-NVN(nvnProgramFinalize) { free(HOST(NvnProgram, A(0))); SET_HOST(A(0), 0); }
+NVN(nvnProgramFinalize) {
+#ifdef __ANDROID__
+    // (S23) a command list still queued for the render thread reads this program's stages when it binds it: freed
+    // under it, a use after free - the queue first, as the texture and sampler pools do (vulkan/async.c)
+    if (vk_async_on()) vk_async_drain();
+#endif
+    free(HOST(NvnProgram, A(0)));
+    SET_HOST(A(0), 0);
+}
 NVN(nvnProgramSetDebugLabel) { (void)c; }
 NVN(nvnProgramSetSampleShading) { (void)c; }
 NVN(nvnProgramSetSubroutineLinkage) { RET(1); }
@@ -1570,6 +1587,12 @@ static void set_shaders(Cpu *c, int stride) {
         p->stages[stage].const_size = *(const uint32_t *)(control + 0x6FC);
         p->stage_mask |= 1u << stage;
     }
+#ifdef __ANDROID__
+    {   // (S23) a program the game sets up as it loads: its pipelines from earlier runs made ahead (vulkan/exec.c)
+        extern void vk_prewarm_program(const NvnProgram *np);
+        vk_prewarm_program(p);
+    }
+#endif
     RET(1);
 }
 

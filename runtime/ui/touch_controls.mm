@@ -407,7 +407,8 @@ extern "C" void touch_controls_draw(ImVec2 display, ImFont *font) {
         bool bar = c[i].bit >= C_DONE && c[i].bit <= C_CANCEL;
         bool on = c[i].bit >= 0 && c[i].bit < 16 && (held >> c[i].bit & 1);
         float fs = (c[i].rect ? c[i].h * (bar ? 0.45f : 0.48f) : c[i].r * 0.9f);
-        ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0, c[i].label);
+        const char *label = bar ? tr(c[i].label) : c[i].label;  // (the edit bar's words in the menu's language)
+        ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0, label);
         ImU32 f = bar ? IM_COL32(60, 90, 70, 230) : on ? fill_on : fill, l = bar ? IM_COL32(236, 194, 84, 255) : line;
         ImU32 tx = bar ? IM_COL32(255, 255, 255, 255) : text;
         if (c[i].rect) {
@@ -432,7 +433,7 @@ extern "C" void touch_controls_draw(ImVec2 display, ImFont *font) {
             ImVec2 b2(c[i].x - d[0] * r * 0.6f - px * r * 0.8f, c[i].y - d[1] * r * 0.6f - py * r * 0.8f);
             dl->AddTriangleFilled(tip, b1, b2, tx);
         } else {
-            dl->AddText(font, fs, ImVec2(c[i].x - ts.x / 2, c[i].y - ts.y / 2), tx, c[i].label);
+            dl->AddText(font, fs, ImVec2(c[i].x - ts.x / 2, c[i].y - ts.y / 2), tx, label);
         }
     }
     // the sticks: where each started (or its resting place) and the knob - none for the drag camera, and only while a

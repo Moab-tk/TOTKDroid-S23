@@ -9,6 +9,7 @@
 #include <math.h>
 #include <stdio.h>
 
+#include "i18n.h"
 #include "imgui.h"
 
 extern "C" {
@@ -112,7 +113,7 @@ void perf_overlay_draw(ImVec2 display, float scale) {
     ImGui::PushStyleColor(ImGuiCol_PlotLines, grade(fps, 55, 28));
     ImGui::PlotLines("##ft", graph, nft, 0, NULL, 0.0f, 100.0f, ImVec2(260 * scale, 44 * scale));
     ImGui::PopStyleColor();
-    ImGui::TextDisabled("frame avg %.1f ms  max %.0f ms", avg_ms, max_ms);
+    ImGui::TextDisabled(tr("frame avg %.1f ms  max %.0f ms"), avg_ms, max_ms);
 
     char cpu[96] = "";
     for (int i = 0, n = 0; i < ds.ncluster && n < (int)sizeof cpu - 8; i++)
@@ -144,24 +145,24 @@ void perf_overlay_draw(ImVec2 display, float scale) {
         ImGui::TextDisabled("ADPF: %s", adpf.state == -2 ? "disabled" : "unavailable");
     }
     ImGui::Text("GPU %s", vk_gpu_desc());
-    ImGui::TextColored(grade(100 - wait_pct, 50, 20), "    waiting on the GPU %.0f%%", wait_pct);
-    ImGui::Text("RAM app %u MB", ds.rss_mb);
+    ImGui::TextColored(grade(100 - wait_pct, 50, 20), tr("    waiting on the GPU %.0f%%"), wait_pct);
+    ImGui::Text(tr("RAM app %u MB"), ds.rss_mb);
     ImGui::SameLine();
-    ImGui::TextDisabled("free %u MB", ds.avail_mb);
+    ImGui::TextDisabled(tr("free %u MB"), ds.avail_mb);
 
     if (ds.soc_temp_c > 0) {
         ImGui::TextColored(grade(100 - ds.soc_temp_c, 35, 20), "SoC %.0f\xc2\xb0" "C", ds.soc_temp_c);
         ImGui::SameLine();
     }
-    if (ds.batt_temp_c > 0) ImGui::TextColored(grade(100 - ds.batt_temp_c, 60, 55), "Battery %.0f\xc2\xb0" "C", ds.batt_temp_c);
+    if (ds.batt_temp_c > 0) ImGui::TextColored(grade(100 - ds.batt_temp_c, 60, 55), tr("Battery %.0f\xc2\xb0" "C"), ds.batt_temp_c);
     else ImGui::NewLine();
     if (ds.batt_pct >= 0) {
-        if (ds.watts > 0) { ImGui::Text("Power %.1f W", ds.watts); ImGui::SameLine(); }
-        ImGui::TextDisabled("battery %.0f%%", ds.batt_pct);
+        if (ds.watts > 0) { ImGui::Text(tr("Power %.1f W"), ds.watts); ImGui::SameLine(); }
+        ImGui::TextDisabled(tr("battery %.0f%%"), ds.batt_pct);
     }
     static const char *const thermal[] = {"normal", "light", "moderate", "severe", "critical", "emergency", "shutdown"};
     if (ds.thermal >= 0 && ds.thermal <= 6) {
-        ImGui::TextColored(grade((float)(6 - ds.thermal), 6, 4), "Thermal: %s", thermal[ds.thermal]);
+        ImGui::TextColored(grade((float)(6 - ds.thermal), 6, 4), tr("Thermal: %s"), tr(thermal[ds.thermal]));
         if (ds.headroom > 0) {
             ImGui::SameLine();
             ImGui::TextDisabled("(headroom %.2f)", ds.headroom);

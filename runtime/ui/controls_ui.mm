@@ -13,12 +13,16 @@ extern "C" {
 #include "../settings.h"
 }
 
+// (the inputs' and the buttons' names in the menu's language: runtime/hle/bindings.c has them in English)
+static const char *in_name(int slot) { return tr(bind_input_name(slot)); }
+static const char *pad_label_tr(int host, int fam) { return tr(bind_pad_label(host, fam)); }
+
 static void cell(int dev, int slot, int fam, int cap_dev, int cap_slot, int ms_left) {
     char lbl[96];
     bool waiting = cap_dev == dev && cap_slot == slot;
     if (waiting) snprintf(lbl, sizeof lbl, tr("Press %s...  %d##%d_%d"), tr(dev == BIND_DEV_PAD ? "a button" : "a key"),
                           (ms_left + 999) / 1000, dev, slot);
-    else snprintf(lbl, sizeof lbl, "%s##%d_%d", dev == BIND_DEV_PAD ? bind_pad_label(g_bind_pad[slot], fam) :
+    else snprintf(lbl, sizeof lbl, "%s##%d_%d", dev == BIND_DEV_PAD ? pad_label_tr(g_bind_pad[slot], fam) :
                                                  bind_key_label(g_bind_key[slot]), dev, slot);
     // changed from the default: gold text; the same button / key on two inputs (a hand-edited larecomp.ini): red
     const int16_t *t = dev == BIND_DEV_PAD ? g_bind_pad : g_bind_key;
@@ -129,14 +133,14 @@ extern "C" void controls_bindings_draw(float scale) {
     if (seen_serial < 0) seen_serial = serial;
     if (serial != seen_serial) {
         seen_serial = serial;
-        const char *now = rslot < 0 ? "" : rdev == BIND_DEV_PAD ? bind_pad_label(g_bind_pad[rslot], fam) : bind_key_label(g_bind_key[rslot]);
+        const char *now = rslot < 0 ? "" : rdev == BIND_DEV_PAD ? pad_label_tr(g_bind_pad[rslot], fam) : bind_key_label(g_bind_key[rslot]);
         if (kind == 5) snprintf(msg, sizeof msg, tr("%s bindings reset to the defaults."), tr(rdev == BIND_DEV_PAD ? "Controller" : "Keyboard"));
-        else if (kind == 1) snprintf(msg, sizeof msg, tr("%s is now %s."), bind_input_name(rslot), now);
+        else if (kind == 1) snprintf(msg, sizeof msg, tr("%s is now %s."), in_name(rslot), now);
         else if (kind == 2)
-            snprintf(msg, sizeof msg, tr("%s is now %s; %s moved to %s (swapped)."), bind_input_name(rslot), now,
-                     bind_input_name(rother), rdev == BIND_DEV_PAD ? bind_pad_label(g_bind_pad[rother], fam) : bind_key_label(g_bind_key[rother]));
-        else if (kind == 3) snprintf(msg, sizeof msg, tr("Cancelled: %s unchanged."), bind_input_name(rslot));
-        else if (kind == 4) snprintf(msg, sizeof msg, tr("Nothing pressed: %s unchanged."), bind_input_name(rslot));
+            snprintf(msg, sizeof msg, tr("%s is now %s; %s moved to %s (swapped)."), in_name(rslot), now,
+                     in_name(rother), rdev == BIND_DEV_PAD ? pad_label_tr(g_bind_pad[rother], fam) : bind_key_label(g_bind_key[rother]));
+        else if (kind == 3) snprintf(msg, sizeof msg, tr("Cancelled: %s unchanged."), in_name(rslot));
+        else if (kind == 4) snprintf(msg, sizeof msg, tr("Nothing pressed: %s unchanged."), in_name(rslot));
         if (kind == 1 || kind == 2 || kind == 5) settings_save();
     }
     if (msg[0]) ImGui::TextColored(ImVec4(0.93f, 0.76f, 0.33f, 1), "%s", msg);
@@ -168,7 +172,7 @@ extern "C" void controls_bindings_draw(float scale) {
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
             ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted(bind_input_name(slot));
+            ImGui::TextUnformatted(in_name(slot));
             ImGui::TableNextColumn();
             if (slot < BIND_PAD_COUNT) cell(BIND_DEV_PAD, slot, fam, cd, cs, ms);
             else ImGui::TextDisabled("%s", tr(slot < BIND_RS_UP ? "Left stick" : "Right stick"));

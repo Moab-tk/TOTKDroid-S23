@@ -64,6 +64,7 @@ void *vk_frame_cmd(void);
 bool vk_imgui_backend_init(void);
 void vk_imgui_backend_shutdown(void);
 uint64_t vk_imgui_texture_rgba(const void *rgba, int w, int h);
+void vk_imgui_texture_free(uint64_t id);
 #endif
 }
 #ifdef __APPLE__
@@ -173,6 +174,18 @@ static std::string g_root;  // extracted game: <root>/exefs, <root>/romfs
 static bool file_exists(const std::string &p) {
     struct stat st;
     return stat(p.c_str(), &st) == 0;
+}
+
+// (S23) A small file written whole: a copy beside it, then put over it - never cut in half by the app closing
+static bool write_whole(const std::string &path, const std::string &text) {
+    std::string tmp = path + ".tmp";
+    FILE *f = fopen(tmp.c_str(), "wb");
+    if (!f) return false;
+    bool ok = fwrite(text.data(), 1, text.size(), f) == text.size();
+    if (fclose(f) != 0) ok = false;
+    ok = ok && rename(tmp.c_str(), path.c_str()) == 0;
+    if (!ok) remove(tmp.c_str());
+    return ok;
 }
 
 // The game version of a main module (game_version_of_build: GAME_V_143; 0 another one), -1 when it isn't there
@@ -1371,8 +1384,7 @@ static void carry_game_code(int version) {
         fclose(f);
     }
     text += std::string("native_code = ") + (g_settings.native_code ? "1" : "0") + "\n";
-    f = fopen(path.c_str(), "wb");
-    if (f) fputs(text.c_str(), f), fclose(f);
+    write_whole(path, text);
 }
 
 // The Game Files page's game versions: the one running, the others set up (choosing one starts the app again in it),
@@ -1412,10 +1424,11 @@ void launcher_video_options(void) {
     opt_section("Advanced");
     {   // (runtime/settings.h gpu_heap / inplace_reads / turnip_lrz / log_file: for GPUs where a Turnip path draws wrong)
         const bool a8 = vk_adreno_8xx(vk_gpu_name());  // (Automatic: on for the Adreno 8xx and the 740)
-        const char *tri_names[] = {a8 ? "Automatic (on for this GPU)" : "Automatic (off for this GPU)", "On", "Off"};
-        auto tri = [&](const char *label, int *v, const char *desc) {  // Automatic / On / Off: -1 / 1 / 0
+        const char *auto_on[] = {"Automatic (on for this GPU)", "On", "Off"}, *auto_off[] = {"Automatic (off for this GPU)", "On", "Off"};
+        // (auto_is: what Automatic picks on this GPU - the heap's own rule is vk_turnip_heap_on)
+        auto tri = [&](const char *label, int *v, const char *desc, bool auto_is) {  // Automatic / On / Off: -1 / 1 / 0
             int i = *v < 0 ? 0 : *v ? 1 : 2;
-            if (opt_choice(label, &i, tri_names, 3, 0, desc)) {
+            if (opt_choice(label, &i, auto_is ? auto_on : auto_off, 3, 0, desc)) {
                 *v = i == 0 ? -1 : i == 1 ? 1 : 0;
                 changed = true;
             }
@@ -1423,14 +1436,15 @@ void launcher_video_options(void) {
         tri("Game memory on the GPU (Turnip)", &g_settings.gpu_heap,
             "On: the game's memory is mapped straight into the GPU's, the fastest way. Off: what each frame uses is copied instead - it "
             "draws right where the fast way doesn't, but this game runs at about half the frame rate (15 fps instead of 35 on an "
-            "Adreno 830). Automatic: on for Adreno 8xx GPUs, off for the others - on another Adreno, try On first. Applies when the "
-            "game starts.");
+            "Adreno 830). Automatic: on for Adreno 8xx GPUs and the Adreno 740, off for the others - on another Adreno, try On "
+            "first. Applies when the game starts.", a8);
         tri("Draw-target reads in place (Turnip)", &g_settings.inplace_reads,
             "On: decals and effects read the image they draw on as it is, the fastest way. Off: a copy of it each time, slower (fewer "
-            "fps) but by the Vulkan rules. Automatic: on for Adreno 8xx GPUs, off for the others. Applies when the game starts.");
+            "fps) but by the Vulkan rules. Automatic: on for Adreno 8xx GPUs and the Adreno 740, off for the others. Applies when the "
+            "game starts.", a8);
         tri("Turnip low-resolution Z (LRZ)", &g_settings.turnip_lrz,
             "Turnip's early depth test, a little faster. Off can fix missing or broken drawing on some Adreno GPUs. Automatic: on for "
-            "Adreno 8xx GPUs, off for the others. Applies when TOTKDroid restarts.");
+            "Adreno 8xx GPUs and the Adreno 740, off for the others. Applies when TOTKDroid restarts.", a8);
         bool lrz_now = g_settings.turnip_lrz < 0 ? a8 : g_settings.turnip_lrz != 0;
         if (lrz_now != vk_lrz_at_start() && opt_button("Restart now##lrz", "Restart TOTKDroid to apply it.")) {
             settings_save();
@@ -1456,10 +1470,14 @@ void launcher_video_options(void) {
             g_settings.present_fifo = fifo != 0;
             changed = true;
         }
-        changed |= opt_int("Shader build threads", &g_settings.shader_workers, 0, 6, 1, 0, "%d",
-                           "CPU threads building shaders. Automatic: 4 on this phone. Fewer leave more CPU for the game, but "
-                           "effects take longer to appear; more get them ready sooner, and can take CPU from the game. Applies "
-                           "when the game starts.", "Automatic");
+        {
+            int cores = SDL_GetNumLogicalCPUCores(), n = cores / 2 > 4 ? 4 : cores / 2 < 1 ? 1 : cores / 2;
+            char d[400];
+            snprintf(d, sizeof d, tr("CPU threads building shaders. Automatic: %d on this phone (half its cores, at most 4). Fewer "
+                                     "leave more CPU for the game, but effects take longer to appear; more get them ready sooner, "
+                                     "and can take CPU from the game. Applies when the game starts."), n);
+            changed |= opt_int("Shader build threads", &g_settings.shader_workers, 0, 6, 1, 0, "%d", d, "Automatic");
+        }
         const char *aniso[] = {"Game's own", "Off", "2x", "4x", "8x", "16x"};
         changed |= opt_choice("Anisotropic filtering", &g_settings.force_aniso, aniso, 6, 0,
                               "Sharpness of textures seen at an angle, as the ground far away. Game's own: what the game asks for. "
@@ -1500,12 +1518,7 @@ static std::string driver_active() {  // the chosen file, "-" the system's, "" n
     }
     return a;
 }
-static void driver_set_active(const std::string &name) {
-    if (FILE *f = fopen((drivers_dir() + "/active.txt").c_str(), "wb")) {
-        fputs(name.c_str(), f);
-        fclose(f);
-    }
-}
+static void driver_set_active(const std::string &name) { write_whole(drivers_dir() + "/active.txt", name); }
 static bool driver_file(const std::string &n) {
     size_t dot = n.rfind('.');
     if (dot == std::string::npos) return false;
@@ -1572,7 +1585,9 @@ static void prelaunch_rows(float sc) {
         std::vector<std::string> files = driver_files();
         std::string active = driver_active();
         if (active.empty() && !files.empty()) active = files[0];
-        if (active != "-" && !active.empty() && std::find(files.begin(), files.end(), active) == files.end()) active = "-";
+        // (a package taken off the list: the activity loads the first one then - BOTWRecompAndroidActivity.customDriver)
+        if (active != "-" && !active.empty() && std::find(files.begin(), files.end(), active) == files.end())
+            active = files.empty() ? "-" : files[0];
         const char *about = "The game runs on the system's driver, lighting included. On Adreno GPUs, Mesa's Turnip driver runs "
                             "it faster: choose a Turnip driver package (.zip, as for adrenotools).";
         auto pick = [](const std::string &name) {
@@ -1784,11 +1799,8 @@ static void blocks_read() {
     }
 }
 static bool block_info_save(int i) {
-    FILE *f = fopen(block_file(i, ".txt").c_str(), "w");
-    if (!f) return false;
     const SettingBlock &b = g_blocks[i];
-    fprintf(f, "%s\n%s\n%s\n", b.name.c_str(), b.when.c_str(), b.driver.c_str());
-    return fclose(f) == 0;
+    return write_whole(block_file(i, ".txt"), b.name + "\n" + b.when + "\n" + b.driver + "\n");
 }
 static void block_say(const char *msg, bool failed) { g_block_msg = tr(msg), g_block_failed = failed; }
 static void block_save(int i) {
@@ -1976,7 +1988,7 @@ static void prelaunch_tab(float sc) {
     {   // (runtime/settings.h gpu_heap / inplace_reads / turnip_lrz / log_file: for GPUs where a Turnip path draws wrong;
         // LASRecompAndroid's, with BOTW's in-place reads of draw targets)
         bool changed = false;
-        const bool a8 = vk_adreno_8xx(vk_gpu_name());  // (Automatic: on for Adreno 8xx only)
+        const bool a8 = vk_adreno_8xx(vk_gpu_name());  // (Automatic: on for Adreno 8xx and the 740)
         auto tri = [&](const char *id, int *v) {  // Automatic / On / Off: -1 / 1 / 0
             bool ch = false;
             ImGui::PushID(id);
@@ -2008,12 +2020,12 @@ static void prelaunch_tab(float sc) {
         changed |= tri("inplace", &g_settings.inplace_reads);
         ImGui::TextDisabled("%s", tr("On: decals and effects read the image they draw on as it is, the fastest way. Off: a copy "
                                   "of it each time, slower (fewer fps) but by the Vulkan rules. Automatic: on for Adreno 8xx "
-                                  "GPUs, off for the others. Applies when the game starts."));
+                                  "GPUs and the Adreno 740, off for the others. Applies when the game starts."));
         ImGui::Spacing();
         ImGui::Text("%s", tr("Turnip low-resolution Z (LRZ)"));
         changed |= tri("lrz", &g_settings.turnip_lrz);
         ImGui::TextDisabled("%s", tr("Turnip's early depth test, a little faster. Off can fix missing or broken drawing on "
-                                  "some Adreno GPUs. Automatic: on for Adreno 8xx GPUs, off for the others. Applies when "
+                                  "some Adreno GPUs. Automatic: on for Adreno 8xx GPUs and the Adreno 740, off for the others. Applies when "
                                   "TOTKDroid restarts."));
         bool lrz_now = g_settings.turnip_lrz < 0 ? a8 : g_settings.turnip_lrz != 0;
         if (lrz_now != vk_lrz_at_start()) {  // (Turnip reads it once, when the app starts)
@@ -2934,6 +2946,7 @@ extern "C" void launcher_run(const char *root) {
 #ifdef __APPLE__
     ImGui_ImplMetal_Shutdown();
 #else
+    vk_imgui_texture_free(g_bg);  // (S23: made again at the next return here - this one would stay in the GPU's memory)
     vk_imgui_backend_shutdown();
 #endif
     ImGui_ImplSDL3_Shutdown();
