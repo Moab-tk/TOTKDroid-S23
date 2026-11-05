@@ -527,8 +527,9 @@ static void tab_display(bool in_game) {
         settings_save();
     const char *aspects[] = {"Unlocked", "Original 16:9"};
     opt_choice("Aspect ratio", &g_settings.aspect, aspects, 2, ASPECT_UNLOCKED,
-               "Unlocked: the view will fill wider screens once the game's cameras are widened - not done yet for this "
-               "game, so it stays 16:9 with bars for now. Original 16:9: the game's own framing, with bars.");
+               "Unlocked: the world and the menus fill a wide screen; the HUD stays in the middle 16:9. Original 16:9: "
+               "the game's own framing, with bars. The camera takes it as the game starts: a change applies the next "
+               "time the game starts (Quit -> Title screen, then Play).");
 #ifndef __ANDROID__  // (Android: always the whole screen)
     bool fs = g_settings.fullscreen;
     if (opt_toggle("Fullscreen", &fs, false, "Fills the screen. Also: F11, Alt+Enter or Cmd+Ctrl+F.")) {
@@ -596,7 +597,7 @@ static void tab_display(bool in_game) {
                                          "lower). Dynamic: as sharp as your GPU keeps at "
                                          "full speed. 1x-2x: the Switch's 900p times that. 75%% / 50%% / 25%%: a share of the "
                                          "display, for slower devices.\n\nRendering the 3D image at %.0f x %.0f."),
-                         1600.0 * sx, 900.0 * sy);
+                         1600.0 * sx, 896.0 * sy);  // (S23 b6: TOTK's scene is 1600x896)
         if (g_settings.res_mode == RES_DYNAMIC && n > 0 && n < (int)sizeof d)
             snprintf(d + n, sizeof d - n, tr(" Dynamic: %.0f%% of the display right now."), output_scale_dynamic_factor() * 100);
         if (opt_choice("Internal resolution", &ri, res, NRES, RES_MATCH_AT, d, false)) g_settings.res_mode = res_mode[ri];
