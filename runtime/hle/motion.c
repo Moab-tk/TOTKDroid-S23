@@ -264,11 +264,14 @@ static void qaxis(float ax, float ay, float az, float ang, float o[4]) {  // ang
     float s = sinf(ang * 0.5f);
     o[0] = cosf(ang * 0.5f), o[1] = ax * s, o[2] = ay * s, o[3] = az * s;
 }
-static float stick_unit(int32_t v) {  // -1..1 past a 10% dead zone
+// -1..1 past a 10% dead zone, on a curve: gentle through most of the travel (half way: a quarter of the motion), the
+// whole of it only at the stick's edge - fine moves for the puzzles, the big ones still there when pushed all the way
+static float stick_unit(int32_t v) {
     float f = v / 32767.0f, a = fabsf(f);
     if (a < 0.1f) return 0;
     f = (a - 0.1f) / 0.9f * (f < 0 ? -1.0f : 1.0f);
-    return f > 1 ? 1 : f < -1 ? -1 : f;
+    f = f > 1 ? 1 : f < -1 ? -1 : f;
+    return 0.3f * f + 0.7f * f * f * f;
 }
 // The Switch's frame: x right, y forward, z up; the sticks' y is up / forward. Left stick forward: the far edge down
 // (about x, negative); right: the right edge down (about y, positive). The right stick turns about the same two axes.
