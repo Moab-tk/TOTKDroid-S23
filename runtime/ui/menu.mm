@@ -1390,21 +1390,20 @@ void menu_render(void *cmd, uint32_t target_w, uint32_t target_h) {
         extern float g_stick_btn_rect[6];  // (ui/touch_controls.mm: a tap there turns it on and off)
         g_stick_btn_rect[2] = 0;
         if ((g_stick_motion || g_settings.stick_motion_button) && !open) {
-            // (S23) the sticks as the motion controller: said on the screen while on, and with the quick button a pill
-            // to tap - lit while on - at the top left, or wherever a finger dragged it
+            // (S23) the sticks as the motion controller: a small round button with a stick drawn in it - lit while on - at
+            // the top left, or wherever a finger dragged it (round and wordless: the touch controls already fill the screen)
             bool on = g_stick_motion;
-            const char *t = tr(on ? "Motion with the sticks: on" : "Motion with the sticks: off");
             ImDrawList *dl = ImGui::GetForegroundDrawList();
-            float fs = ImGui::GetFontSize() * 0.8f, px = 22 * scale, py = 12 * scale;
-            ImVec2 sz = ImGui::GetFont()->CalcTextSizeA(fs, FLT_MAX, 0, t);
-            float w = sz.x + 2 * px, h = sz.y + 2 * py, m = 16 * scale;
+            float py = 12 * scale, d = ImGui::GetFontSize() * 0.8f + 2 * py, w = d, h = d, m = 16 * scale;
             const float *pos = g_settings.stick_btn_pos;  // (dragged there: ui/touch_controls.mm stick_button)
             ImVec2 a = pos[0] >= 0 && pos[1] >= 0 ? ImVec2(pos[0] * io.DisplaySize.x, pos[1] * io.DisplaySize.y) : ImVec2(m, m);
             a.x = fmaxf(0, fminf(a.x, io.DisplaySize.x - w)), a.y = fmaxf(0, fminf(a.y, io.DisplaySize.y - h));
-            ImVec2 b(a.x + w, a.y + h), p(a.x + px, a.y + py);
-            dl->AddRectFilled(a, b, on ? IM_COL32(18, 110, 80, 210) : IM_COL32(0, 0, 0, 130), (b.y - a.y) * 0.5f);
-            if (on) dl->AddRect(a, b, IM_COL32(120, 230, 190, 255), (b.y - a.y) * 0.5f, 0, 2 * scale);
-            dl->AddText(ImGui::GetFont(), fs, p, on ? IM_COL32(255, 255, 255, 255) : IM_COL32(200, 205, 200, 230), t);
+            ImVec2 c(a.x + d * 0.5f, a.y + d * 0.5f);
+            dl->AddCircleFilled(c, d * 0.5f, on ? IM_COL32(18, 110, 80, 210) : IM_COL32(0, 0, 0, 130), 32);
+            if (on) dl->AddCircle(c, d * 0.5f - scale, IM_COL32(120, 230, 190, 255), 32, 2 * scale);
+            ImU32 ic = on ? IM_COL32(255, 255, 255, 255) : IM_COL32(200, 205, 200, 230);
+            dl->AddCircle(c, d * 0.3f, ic, 24, 2 * scale);                              // (the stick's base)
+            dl->AddCircleFilled(ImVec2(c.x, c.y - d * 0.05f), d * 0.15f, ic, 20);       // (and its cap)
             if (g_settings.stick_motion_button)  // (a little bigger than drawn: an easy target for a finger)
                 g_stick_btn_rect[0] = a.x - py, g_stick_btn_rect[1] = a.y - py, g_stick_btn_rect[2] = w + 2 * py,
                 g_stick_btn_rect[3] = h + 2 * py, g_stick_btn_rect[4] = a.x, g_stick_btn_rect[5] = a.y;
