@@ -1657,7 +1657,7 @@ static void prelaunch_rows(float sc) {
         pthread_mutex_unlock(&g_lock);
         const char *about = "The saves are in the app's own folder, out of file managers' reach. Export saves this version's as one "
                             ".zip where you choose (to keep, edit, send or move them). Import replaces them with the saves in a "
-                            ".zip - one exported here, or any holding 0, 1, 2... and option.sav; Import from folder takes an "
+                            ".zip - one exported here, or any holding slot_00, slot_01... and option.sav; Import from folder takes an "
                             "emulator's save folder. The ones before are kept beside them. A save from a newer version of the game "
                             "may not load in an older one.";
         auto save = [&](const char *label, const char *method) {
