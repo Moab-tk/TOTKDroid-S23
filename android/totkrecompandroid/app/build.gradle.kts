@@ -14,6 +14,9 @@ val gen = layout.buildDirectory.dir("generated/totkrecompandroid")
 // The release key: outside the repository, in ~/.totkrecompandroid/keystore.properties (storeFile, storePassword, keyAlias,
 // keyPassword); without it, release builds are signed with the debug key
 val releaseKey: File = File(System.getProperty("user.home"), ".totkrecompandroid/keystore.properties")
+// (S23) Two versions of the same code: by default the one for the Snapdragon 8 Gen 2; -Puniversal=1 the one for every phone
+// (cpp/CMakeLists.txt S23_CPU). The same package, so one installs over the other and keeps the game files and the saves.
+val universal = providers.gradleProperty("universal").isPresent
 
 android {
     namespace = "com.totkrecompandroid"
@@ -25,13 +28,15 @@ android {
         minSdk = 30
         targetSdk = 36
         versionCode = 8
-        versionName = "0.2.1-s23-b7"
+        versionName = if (universal) "0.2.1-universal-b7" else "0.2.1-s23-b7"
+        manifestPlaceholders["appLabel"] = if (universal) "TOTK Universal" else "TOTK S23"
         ndk {
             abiFilters += "arm64-v8a"
         }
         externalNativeBuild {
             cmake {
                 arguments += "-DTOTK_GEN_DIR=${gen.get().asFile.resolve("inc").absolutePath.replace('\\', '/')}"
+                if (universal) arguments += "-DS23_CPU=OFF"
             }
         }
     }
@@ -105,7 +110,7 @@ val prepareTotkRecompAndroid by tasks.registering {
     // (S23) the Vulkan drivers the app comes with: src/drivers/catalogo.tsv and its packages
     val drivers = file("src/drivers")
     inputs.dir(drivers)
-    inputs.property("allDrivers", false)
+    inputs.property("allDrivers", universal)
     inputs.files(libs.map { depLib(it) }.filter { it.exists() })
     if (deps.resolve("gen").exists()) inputs.dir(deps.resolve("gen"))  // (the game code's builder, below)
     inputs.property("gameBuilder", project.findProperty("totk.gameBuilder")?.toString() ?: "false")
@@ -132,7 +137,7 @@ val prepareTotkRecompAndroid by tasks.registering {
         dOut.deleteRecursively()
         dOut.mkdirs()
         val keep = drivers.resolve("catalogo.tsv").readLines(Charsets.UTF_8).filter { l ->
-            l.isNotBlank() && (l.startsWith("#") || false || l.split('\t').getOrElse(1) { "" }.split(',').contains("8g2"))
+            l.isNotBlank() && (l.startsWith("#") || universal || l.split('\t').getOrElse(1) { "" }.split(',').contains("8g2"))
         }
         dOut.resolve("catalogo.tsv").writeText(keep.joinToString("\n", postfix = "\n"), Charsets.UTF_8)
         for (l in keep) if (!l.startsWith("#")) {

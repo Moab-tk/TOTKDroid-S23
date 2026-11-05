@@ -678,6 +678,8 @@
  "Snapdragon 7s Gen 2, 7 Gen 3, 7 Gen 4, 6 Gen 1 e 6 Gen 3 (Adreno 710, 720, 722)"},
 {"Snapdragon 888, 870, 865, 855, 845 and 7 Gen 1 (Adreno 6xx)",
  "Snapdragon 888, 870, 865, 855, 845 e 7 Gen 1 (Adreno 6xx)"},
+{"An unofficial modification for Android phones, made with AI from one person's ideas. It was only tested on a Samsung Galaxy S23 Ultra, so it may run worse on other phones. It isn't made or supported by the original authors, so please don't take its problems to them. Don't take it too seriously: if it doesn't work for you, just leave it and download the version you like best.",
+ "Uma modificação não oficial para celulares Android, feita com IA a partir das ideias de uma pessoa. Só foi testada em um Samsung Galaxy S23 Ultra, então pode rodar pior em outros celulares. Não é feita nem tem suporte dos autores originais, por isso não leve os problemas dela até eles. Não leve muito a sério: se não funcionar para você, é só deixar de lado e baixar a versão de que mais gostar."},
 {"In use now.",
  "Em uso agora."},
 {"Add driver",

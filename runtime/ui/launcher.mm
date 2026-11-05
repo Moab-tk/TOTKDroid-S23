@@ -1875,10 +1875,18 @@ static void prelaunch_rows(float sc) {
         opt_action("Licenses", "",
                    "This app's MIT license and the list of the other components' licenses are inside the APK, in "
                    "assets/licenses, and in the source code.");
+#ifdef LARECOMP_UNIVERSAL
+        opt_action("About this version", "Unofficial",
+                   "An unofficial modification for Android phones, made with AI from one person's ideas. It was only tested on "
+                   "a Samsung Galaxy S23 Ultra, so it may run worse on other phones. It isn't made or supported by the original "
+                   "authors, so please don't take its problems to them. Don't take it too seriously: if it doesn't work for "
+                   "you, just leave it and download the version you like best.");
+#else
         opt_action("About this version", "Unofficial",
                    "An unofficial modification for the Samsung Galaxy S23, made with AI from one person's ideas. It isn't made "
                    "or supported by the original authors, so please don't take its problems to them. Don't take it too "
                    "seriously: if it doesn't work for you, just leave it and download the version you like best.");
+#endif
     }
     if (changed) settings_save();
     opt_end();

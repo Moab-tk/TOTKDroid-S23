@@ -12,6 +12,26 @@ Turnip-v27.0.0-20261105-r5.zip
   Banners Turnip 27.0.0 r5, de The412Banner, 2026-11-05: https://github.com/The412Banner/Banners-Turnip
   sha256 do original 0e00f9a85105d0df992858728d01dd9398df9eae478d27da35df3ce7690d4908
 
+Turnip-v27.0.0-20261105-r5-710-720-Test.zip
+  Banners Turnip 27.0.0 r5 (710/720/722), de The412Banner, 2026-11-05: https://github.com/The412Banner/Banners-Turnip
+  sha256 do original 3f088720181a607179857e7b5b4ec647d4570699cfc91392c8a7cc78a75ae24b
+
+Turnip-v27.0.0-20261105-r5-A8xx.zip
+  Banners Turnip 27.0.0 r5 (A8xx), de The412Banner, 2026-11-05: https://github.com/The412Banner/Banners-Turnip
+  sha256 do original 763d3ba77390f20ad1ff5b1fa0b60c85544cdc2ea1e54e2b9b175badd5531c99
+
+Turnip-v27.0.0-20261105-r5-Banners-AIO.zip
+  Banners AIO 27.0.0 r5 (todos), de The412Banner, 2026-11-05: https://github.com/The412Banner/Banners-Turnip
+  sha256 do original 983a521cfbe33b14e9d7c82c3d179d3b177a2fdef4e429da84a1ec5d7ab3663a
+
+turnip_faux123_v1.2.5.adpkg.zip
+  faux123 Turnip 1.2.5, de faux123, 2026-11-03: https://github.com/faux123/turnip-faux123-driver
+  sha256 do original ac67f52bd3b18838f501a0deee8820257516798fadb7c45b9db9222632519e2c
+
+mesa-turnip-android-26.2.6.zip
+  Mesa Turnip 26.2.6 (oficial), de nihui, 2026-10-29: https://github.com/nihui/mesa-turnip-android-driver
+  sha256 do original 936c31c5ed5947b3c2a1106043832db93d6af270b5dede86449b6a44fc40fff4
+
 Turnip-v27.0.0-20261025-r5-8G2-OneUI.zip
   Banners Turnip 27.0.0 (One UI, testado), de The412Banner, 2026-10-25: https://github.com/The412Banner/Banners-Turnip
   sha256 do original 688023aa3764e02e4945da4f168558ffd2e8ea59d4d37a23784deea2cb705a83
@@ -19,6 +39,18 @@ Turnip-v27.0.0-20261025-r5-8G2-OneUI.zip
 Turnip-v27.0.0-20261025-r5.zip
   Banners Turnip 27.0.0 (testado), de The412Banner, 2026-10-25: https://github.com/The412Banner/Banners-Turnip
   sha256 do original 1190b310dbe32a669f4c2239d62a57f58c4452255162d144bb36f2758d0d0221
+
+Turnip-710-720-722-v4.5.1-sw.zip
+  Vauzi Turnip 710/720/722 4.5.1, de Vauzi, 2026-10-25: https://github.com/Vauzi-17/710
+  sha256 do original 298e5aef120fa8ebd7848c153430d326283053535837e2e68a99d9e7df5654a9
+
+Turnip-710-720-722-v4.5-sw.zip
+  Vauzi Turnip 710/720/722 4.5, de Vauzi, 2026-10-25: https://github.com/Vauzi-17/710
+  sha256 do original b6fd4e5f1d327fd1ac626b7549b7936d4042ae1b194ebd24fabc742a2fd740ac
+
+Turnip-Duo-v5.1.zip
+  Turnip Duo 5.1 (Adreno 722), de Vauzi e sherft2607, 2026-10-24: https://github.com/sherft2607/turnip-adreno722-duo
+  sha256 do original f8d7ff8abb0493d1b4ba99094509548f97d944682fabe504c08192707f9ad11e
 
 Turnip_v27.0.0-R1-Oneui.zip
   StevenMXZ Turnip 27.0.0 R1 (One UI), de StevenMXZ, 2026-10-19: https://github.com/StevenMXZ/Adreno-Tools-Drivers
@@ -32,10 +64,46 @@ Turnip_Gen8_V38_Patched.zip
   StevenMXZ Turnip Gen8 V38 Patched, de StevenMXZ, 2026-10-19: https://github.com/StevenMXZ/Adreno-Tools-Drivers
   sha256 do original 2bbb279a3da7680503a54a51a3051c7a4302c8fb2a089f8b183b4b5d6ba9ac17
 
+Turnip_Gen8_V38.zip
+  StevenMXZ Turnip Gen8 V38, de StevenMXZ, 2026-10-19: https://github.com/StevenMXZ/Adreno-Tools-Drivers
+  sha256 do original 642cb514534dc6b712ce0fb16aa76db566359b6c8542f0577f8ba6dd3aff8674
+
+TurnipZ-0.3.0.zip
+  TurnipZ 0.3.0, de AlexSanz0902, 2026-10-19: https://github.com/AlexSanz0902/turnip-sd865-z
+  sha256 do original 1bd77e92487cfc08b920fdb0505a8fa8bccaa8b94ab7497a931309a1126e4445
+
+Turnip_v26.3.0-R6.zip
+  StevenMXZ Turnip 26.3.0 R6, de StevenMXZ, 2026-09-30: https://github.com/StevenMXZ/Adreno-Tools-Drivers
+  sha256 do original 5fa2305eb9eff64d9347a670e6ca5ef7c518f60e9e782a4db7ee5588c9852d81
+
+mainline-turnip-sync-V32.zip
+  whitebelyash Turnip V32, de whitebelyash, 2026-09-19: https://github.com/whitebelyash/freedreno_turnip-CI
+  sha256 do original 465cc6420487d6dc30f4e7149dc3944fdfd412e05ca48f5ba593408f1638f1e4
+
 Balemuni_Apex_v2_ULTIMATE_SD8Gen2.zip
   Balemuni Apex 2 Ultimate (8 Gen 2), de Balemuni, 2026-08-26: https://github.com/Balemuni/Balemunis-Aurora
-  sha256 do original 810567af3bc849b3bb33f69868a5268e2cc5b922a979a732daf1a3b18e02df0a (recomprimido aqui, mesmo conteúdo: 33c92d72908b0de998d45efcc4032610beab94554c546e759eeb59e8812801f9)
+  sha256 do original 810567af3bc849b3bb33f69868a5268e2cc5b922a979a732daf1a3b18e02df0a (recomprimido aqui, mesmo conteúdo: 12af759e46204ed091bf05c579d9501953ab3560c2b160f8c6e20b45299eaf71)
+
+Balemuni_Apex_v2_UNIVERSAL.zip
+  Balemuni Apex 2 Universal, de Balemuni, 2026-08-26: https://github.com/Balemuni/Balemunis-Aurora
+  sha256 do original 38a3eb061016f3a17c412001e651105f99344a71a07b8e458a936b7e999cf2e3 (recomprimido aqui, mesmo conteúdo: df29269db5cd0ee6b84bd421ab62e303c7dfe06cfa7f0903e10793a31ada40ba)
 
 turnip_mrpurple_T30-toasted.adpkg.zip
   Mr Purple Turnip T30, de MrPurple666, 2026-08-17: https://github.com/MrPurple666/purple-turnip
   sha256 do original f65b2d3353fd4aa7190bb5426b94468e99ffea7a58a830bc0c4651db89353227
+
+a8xx-turnip-gen8-sync-V29.zip
+  whitebelyash Turnip A8xx V29, de whitebelyash, 2026-06-15: https://github.com/whitebelyash/freedreno_turnip-CI
+  sha256 do original d122f7b473150dc32e5455f6434dc0d0e784d345a6f5e44fce419718c97c9f0f
+
+Turnip_v26.0.0_R8.zip
+  K11MCH1 Turnip 26.0.0 R8, de K11MCH1, 2026-01-08: https://github.com/K11MCH1/AdrenoToolsDrivers
+  sha256 do original e634db0f929e2205e95511c769071817d0390180ec72c8e690bc76375e813715
+
+turnip_v24.3.0_R9v2.zip
+  K11MCH1 Turnip 24.3.0 R9v2, de K11MCH1, 2024-09-29: https://github.com/K11MCH1/AdrenoToolsDrivers
+  sha256 do original 8a781186ed96d7f9b1620ae4caa508eb121b78af4b3777f0907dada34ce6714a
+
+Turnip-24.1.0.adpkg_R18.a6xx.zip
+  K11MCH1 Turnip 24.1.0 R18 (a6xx), de K11MCH1, 2024-03-19: https://github.com/K11MCH1/AdrenoToolsDrivers
+  sha256 do original 073f0f56a375dc3f92bd63ab240e3b61e7f7c99904548d949f4565faf50e556b

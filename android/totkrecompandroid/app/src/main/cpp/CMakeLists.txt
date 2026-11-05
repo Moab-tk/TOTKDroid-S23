@@ -67,8 +67,15 @@ else()
 endif()
 # -O2 -g whatever the Gradle build type (the Android runtime optimization flags): a debug build left the runtime at -O0, about half of the
 # game thread's time
-target_compile_options(main PRIVATE -O2 -g -mcpu=cortex-x1+i8mm+bf16+fp16fml+sha3 -fno-strict-aliasing -Wall -Wno-unused-function -Wno-format  # (as on Linux: %llx for uint64_t)
+target_compile_options(main PRIVATE -O2 -g -fno-strict-aliasing -Wall -Wno-unused-function -Wno-format  # (as on Linux: %llx for uint64_t)
     $<$<COMPILE_LANGUAGE:CXX>:-std=c++17>)
+# (S23) The runtime tuned for the Snapdragon 8 Gen 2: these instructions stop older phones. -Puniversal=1 (build.gradle.kts): without it
+option(S23_CPU "tune the runtime for the Snapdragon 8 Gen 2" ON)
+if(S23_CPU)
+    target_compile_options(main PRIVATE -mcpu=cortex-x1+i8mm+bf16+fp16fml+sha3)
+else()
+    target_compile_definitions(main PRIVATE LARECOMP_UNIVERSAL)
+endif()
 target_link_libraries(main PRIVATE SDL3 shaderc_shared adrenotools android nativewindow log dl m)
 # (runtime/hle.h, ipc.h, main.c: tables in named sections found through __start_ / __stop_ symbols)
 target_link_options(main PRIVATE -Wl,-z,nostart-stop-gc)
