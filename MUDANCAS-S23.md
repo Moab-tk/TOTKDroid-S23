@@ -114,6 +114,9 @@ de todas as 45 configurações: se cada uma chega ao jogo e quando passa a valer
   MHz) com a bateria a 31 °C e a pele a 42-45 °C: pele e chip também contam, não só a bateria.
 - **Botão rápido do movimento pelos analógicos redondo e pequeno** (pedido do Moab), com um analógico desenhado, no lugar
   da pílula com texto: cobria demais a tela junto com os controles de toque.
+- **Versão Universal** (pedido do Moab), como a do BOTW: `-Puniversal=1` compila sem as instruções do 8 Gen 2
+  (`S23_CPU`) e leva os 26 drivers em 8 abas, com o recomendado para cada chip. Mesmo pacote: uma instala por cima da
+  outra. Conferida com o `conferir_universal.py` do BOTW. Experimental: só testada no S23.
 
 ## O que não foi modificado
 

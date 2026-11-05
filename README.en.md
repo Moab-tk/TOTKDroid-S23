@@ -112,7 +112,9 @@ lowering the resolution helps little. In the same 30-minute session the system l
   memory may close the game.
 - **Building ahead:** the first session after installing a new version only records the pipelines; the gain shows from
   the second one on.
-- **Only tested on the S23 Ultra.** There's no Universal version of TOTK for now.
+- **Only tested on the S23 Ultra.** From b7 on there's also a **Universal** version (`TOTK-Universal-b7.apk`), for any
+  arm64 phone with Vulkan, with the 26 drivers in 8 tabs. It's experimental: only tested on the S23. The game reached
+  9.2 GB of memory on a 12 GB phone, so on phones with 8 GB or less it may close.
 
 ## Test options
 

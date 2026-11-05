@@ -1,6 +1,6 @@
 # Drivers Vulkan do TOTK S23
 
-A partir da b7, os drivers ficam numa aba por chip. Esta versão é feita para o Snapdragon 8 Gen 2, por isso só traz a aba dele, com 9 drivers. O mais novo aparece em cima.
+A partir da b7, os drivers ficam numa aba por chip, com o mais novo em cima. A versão S23 é feita para o Snapdragon 8 Gen 2, por isso só traz a aba dele, com 9 drivers. A versão **Universal** traz os 26 drivers em 8 abas, com o recomendado para cada chip; a tabela dos recomendados está no DRIVERS.md do BOTW, logo abaixo.
 
 Um driver só é copiado para o celular quando você escolhe. Os outros não ocupam espaço.
 
@@ -48,7 +48,7 @@ Os drivers da Qualcomm não vêm no app, porque não podem ser redistribuídos. 
 
 ---
 
-From b7 on, the drivers are in a tab per chip. This S23 version only has the Snapdragon 8 Gen 2 tab, with 9 drivers, newest first. A driver is copied out only when it's chosen.
+From b7 on, the drivers are in a tab per chip. The S23 version only has the Snapdragon 8 Gen 2 tab, with 9 drivers, newest first; the Universal one has all 26 in 8 tabs, with the recommended one per chip. A driver is copied out only when it's chosen.
 
 On the first start, the app picks the tested Banners 27.0.0 build. It uses the One UI build on Samsung phones and on any 8 Gen 2 whose system driver is 676.70 or newer; on the others it uses the standard one. Afterwards your choice stays.
 

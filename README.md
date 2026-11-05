@@ -112,7 +112,9 @@ baixar a resolução ajuda pouco. Na mesma partida de 30 minutos, o sistema baix
   sessão. Celulares com menos memória podem fechar o jogo.
 - **Montagem antecipada:** a primeira sessão depois de instalar uma versão nova só anota os pipelines; o ganho aparece
   da segunda em diante.
-- **Só testada no S23 Ultra.** Não há versão Universal do TOTK por enquanto.
+- **Só testada no S23 Ultra.** A partir da b7 há também a versão **Universal** (`TOTK-Universal-b7.apk`), para qualquer
+  celular arm64 com Vulkan, com os 26 drivers em 8 abas. Ela é experimental: só foi testada no S23. O jogo chegou a 9,2 GB
+  de memória num celular de 12 GB, então em celulares de 8 GB ou menos ele pode fechar.
 
 ## Opções de teste
 
