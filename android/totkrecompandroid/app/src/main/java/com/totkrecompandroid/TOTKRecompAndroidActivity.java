@@ -1234,46 +1234,223 @@ public class TOTKRecompAndroidActivity extends SDLActivity {
     // The first driver in <external files>/drivers, in internal storage (copied again only when it changed). A zip's
     // library is the one its meta.json names (adrenotools' libraryName: packages with support libraries beside it, as
     // RADV-Xclipse's), else one named like a Vulkan driver, else its only / last .so.
-    // (S23) The packages the app comes with (assets/drivers) join the list on Qualcomm phones, once: one the player
-    // deletes stays deleted. Offered, not chosen: whatever ran before keeps running.
+    // (S23 b14) The drivers the app comes with: assets/drivers/catalogo.tsv, shown in tabs by chip (ui/launcher.mm).
+    // None is copied out until it's chosen (installDriver): the Universal version has dozens. On the first start ever the
+    // one for this phone is chosen (recommendedDriver: by its chip, its GPU and its system driver's version); afterwards
+    // the player's choice stays. (Before b14 they were all copied, offered once: those copies stay on the list.)
     private void offerDrivers() throws IOException {
         boolean qualcomm = android.os.Build.HARDWARE.toLowerCase().startsWith("qcom")
                 || (android.os.Build.VERSION.SDK_INT >= 31 && "QTI".equals(android.os.Build.SOC_MANUFACTURER));
-        String[] names = getAssets().list("drivers");
-        if (!qualcomm || names == null) return;
         File dir = new File(getExternalFilesDir(null), "drivers");
         dir.mkdirs();
-        File mark = new File(dir, "offered.txt");
-        String offered = mark.exists() ? readSmall(mark) : "";
+        String[] dev = deviceInfo();
+        setenv("LARECOMP_DEVICE_INFO", String.join("\t", dev));
+        if (!qualcomm) return;
+        File cat = new File(getFilesDir(), "drivers-catalogo.tsv");
+        try (InputStream in = getAssets().open("drivers/catalogo.tsv")) {
+            copy(in, cat);
+        } catch (IOException none) {
+            return;
+        }
+        setenv("LARECOMP_DRIVER_CATALOG", cat.getPath());
+        String rec = recommendedDriver(dev);
+        setenv("LARECOMP_DRIVER_RECOMMENDED", rec);
         File active = new File(dir, "active.txt");
-        boolean changed = false;
-        for (String n : names) {
-            if (!DRIVER_FILE.matcher(n).find() || offered.contains(n + "\n")) continue;
-            if (!active.exists()) {  // (nothing picked meant "the first one": the same driver as before, now by name)
-                File[] had = dir.listFiles((d, x) -> DRIVER_FILE.matcher(x).find());
-                String keep = "-";
-                if (had != null && had.length > 0) {
-                    Arrays.sort(had);
-                    keep = had[0].getName();
-                }
-                try (OutputStream o = new FileOutputStream(active)) {
-                    o.write(keep.getBytes());
+        if (active.exists()) return;
+        File[] had = dir.listFiles((d, x) -> DRIVER_FILE.matcher(x).find());
+        String pick;
+        if (had != null && had.length > 0) {  // (nothing picked meant "the first one": the same driver as before, now by name)
+            Arrays.sort(had);
+            pick = had[0].getName();
+        } else pick = rec.isEmpty() ? "-" : rec.equals("-") || installDriverFile(rec) ? rec : "-";
+        try (OutputStream o = new FileOutputStream(active)) {
+            o.write(pick.getBytes());
+        }
+        Log.i(TAG, "Vulkan driver: first start, " + pick + " chosen for " + String.join(" | ", dev));
+    }
+
+    // A driver of the catalogue copied to the list (Settings > Files > Vulkan driver, when it's chosen): true when it's there
+    public static boolean installDriver(String name) {
+        try {
+            return self.installDriverFile(name);
+        } catch (IOException e) {
+            Log.w(TAG, "driver " + name + ": " + e);
+            return false;
+        }
+    }
+
+    private boolean installDriverFile(String name) throws IOException {
+        if (name == null || name.isEmpty() || name.contains("/") || !DRIVER_FILE.matcher(name).find()) return false;
+        File dir = new File(getExternalFilesDir(null), "drivers");
+        dir.mkdirs();
+        File dst = new File(dir, name);
+        if (dst.exists()) return true;
+        File tmp = new File(dir, name + ".part");
+        try (InputStream in = getAssets().open("drivers/" + name)) {
+            copy(in, tmp);
+        }
+        return tmp.renameTo(dst);
+    }
+
+    // This phone, for the driver's choice and for the driver page: brand, system (One UI 6.1, HyperOS 2.0...), chip
+    // (SM8550), GPU ("Adreno (TM) 740") and the system's own driver version (676.79, from the GLES driver: the same
+    // number as its Vulkan one). The GPU's is asked once per system version (a small GLES context; files/aparelho.txt).
+    private String[] deviceInfo() {
+        String brand = android.os.Build.MANUFACTURER, soc = "";
+        if (android.os.Build.VERSION.SDK_INT >= 31) soc = android.os.Build.SOC_MODEL;
+        if (soc == null || soc.isEmpty() || soc.equalsIgnoreCase("unknown")) soc = prop("ro.soc.model");
+        if (soc.isEmpty()) soc = prop("ro.board.platform");
+        String os = systemName();
+        File cache = new File(getFilesDir(), "aparelho.txt");
+        String gpu = "", blob = "";
+        try {
+            String[] c = cache.exists() ? readSmall(cache).split("\n", -1) : new String[0];
+            if (c.length >= 3 && c[0].equals(android.os.Build.FINGERPRINT)) {
+                gpu = c[1];
+                blob = c[2];
+            } else {
+                String[] gl = glInfo();
+                gpu = gl[0];
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("V@0*(\\d+)\\.(\\d+)").matcher(gl[1]);
+                if (m.find()) blob = m.group(1) + "." + m.group(2);
+                try (OutputStream o = new FileOutputStream(cache)) {
+                    o.write((android.os.Build.FINGERPRINT + "\n" + gpu + "\n" + blob + "\n").getBytes());
                 }
             }
-            File dst = new File(dir, n);
-            if (!dst.exists()) {
-                File tmp = new File(dir, n + ".part");
-                try (InputStream in = getAssets().open("drivers/" + n)) {
-                    copy(in, tmp);
-                }
-                if (!tmp.renameTo(dst)) throw new IOException("driver: " + n);
+        } catch (Exception e) {
+            Log.w(TAG, "device info: " + e);
+        }
+        return new String[] {brand, os, soc, gpu, blob, chipGroup(soc, gpuNumber(gpu))};
+    }
+
+    private static String prop(String key) {
+        try {
+            Process p = Runtime.getRuntime().exec(new String[] {"getprop", key});
+            try (InputStream in = p.getInputStream()) {
+                return new String(readAll(in)).trim();
             }
-            offered += n + "\n";
-            changed = true;
+        } catch (Exception e) {
+            return "";
         }
-        if (changed) try (OutputStream o = new FileOutputStream(mark)) {
-            o.write(offered.getBytes());
+    }
+
+    private static String systemName() {
+        String base = "Android " + android.os.Build.VERSION.RELEASE, v;
+        if (!(v = prop("ro.build.version.oneui")).isEmpty()) {  // (60101: One UI 6.1.1)
+            try {
+                int n = Integer.parseInt(v);
+                return "One UI " + (n / 10000) + "." + (n / 100 % 100) + " (" + base + ")";
+            } catch (NumberFormatException e) {
+                return "One UI (" + base + ")";
+            }
         }
+        if (!(v = prop("ro.mi.os.version.name")).isEmpty()) return "HyperOS " + v.replaceFirst("^OS", "") + " (" + base + ")";
+        if (!(v = prop("ro.miui.ui.version.name")).isEmpty()) return "MIUI " + v.replaceFirst("^V", "") + " (" + base + ")";
+        if (!(v = prop("ro.build.version.oplusrom")).isEmpty() || !(v = prop("ro.build.version.opporom")).isEmpty())
+            return (android.os.Build.MANUFACTURER.equalsIgnoreCase("oneplus") ? "OxygenOS " : "ColorOS ")
+                    + v.replaceFirst("^V", "") + " (" + base + ")";
+        if (!(v = prop("ro.vivo.os.version")).isEmpty()) {
+            String name = prop("ro.vivo.os.name");
+            return (name.isEmpty() ? "OriginOS" : name) + " " + v + " (" + base + ")";
+        }
+        if (!(v = prop("ro.build.version.magic")).isEmpty()) return v.replace('_', ' ') + " (" + base + ")";
+        return base;
+    }
+
+    private static String[] glInfo() {  // the system GLES driver's GL_RENDERER and GL_VERSION ("" when it can't be asked)
+        String r = "", v = "";
+        android.opengl.EGLDisplay d = android.opengl.EGL14.eglGetDisplay(android.opengl.EGL14.EGL_DEFAULT_DISPLAY);
+        int[] ver = new int[2];
+        if (d == android.opengl.EGL14.EGL_NO_DISPLAY || !android.opengl.EGL14.eglInitialize(d, ver, 0, ver, 1))
+            return new String[] {r, v};
+        try {
+            int[] attr = {android.opengl.EGL14.EGL_RENDERABLE_TYPE, android.opengl.EGL14.EGL_OPENGL_ES2_BIT,
+                          android.opengl.EGL14.EGL_SURFACE_TYPE, android.opengl.EGL14.EGL_PBUFFER_BIT, android.opengl.EGL14.EGL_NONE};
+            android.opengl.EGLConfig[] cfg = new android.opengl.EGLConfig[1];
+            int[] n = new int[1];
+            if (android.opengl.EGL14.eglChooseConfig(d, attr, 0, cfg, 0, 1, n, 0) && n[0] > 0) {
+                android.opengl.EGLContext c = android.opengl.EGL14.eglCreateContext(d, cfg[0], android.opengl.EGL14.EGL_NO_CONTEXT,
+                        new int[] {android.opengl.EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, android.opengl.EGL14.EGL_NONE}, 0);
+                android.opengl.EGLSurface s = android.opengl.EGL14.eglCreatePbufferSurface(d, cfg[0],
+                        new int[] {android.opengl.EGL14.EGL_WIDTH, 1, android.opengl.EGL14.EGL_HEIGHT, 1, android.opengl.EGL14.EGL_NONE}, 0);
+                if (c != android.opengl.EGL14.EGL_NO_CONTEXT && s != android.opengl.EGL14.EGL_NO_SURFACE
+                        && android.opengl.EGL14.eglMakeCurrent(d, s, s, c)) {
+                    String a = android.opengl.GLES20.glGetString(android.opengl.GLES20.GL_RENDERER);
+                    String b = android.opengl.GLES20.glGetString(android.opengl.GLES20.GL_VERSION);
+                    r = a != null ? a : "";
+                    v = b != null ? b : "";
+                    android.opengl.EGL14.eglMakeCurrent(d, android.opengl.EGL14.EGL_NO_SURFACE, android.opengl.EGL14.EGL_NO_SURFACE,
+                            android.opengl.EGL14.EGL_NO_CONTEXT);
+                }
+                if (s != android.opengl.EGL14.EGL_NO_SURFACE) android.opengl.EGL14.eglDestroySurface(d, s);
+                if (c != android.opengl.EGL14.EGL_NO_CONTEXT) android.opengl.EGL14.eglDestroyContext(d, c);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "GLES info: " + e);
+        } finally {
+            android.opengl.EGL14.eglTerminate(d);
+        }
+        return new String[] {r, v};
+    }
+
+    private static int gpuNumber(String gpu) {  // "Adreno (TM) 740" -> 740, 0 none
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("Adreno[^0-9]*(\\d{3})").matcher(gpu == null ? "" : gpu);
+        return m.find() ? Integer.parseInt(m.group(1)) : 0;
+    }
+
+    // The catalogue's tab for this chip (assets/drivers/catalogo.tsv's groups): by the chip's model first - Turnip names
+    // the 8+ Gen 1's Adreno 730 "725", as the 7+ Gen 2's - else by the GPU. "" none.
+    private static String chipGroup(String soc, int gpu) {
+        String s = soc == null ? "" : soc.toUpperCase();
+        if (s.startsWith("SM8550")) return "8g2";
+        if (s.startsWith("SM8650")) return "8g3";
+        if (s.startsWith("SM8450") || s.startsWith("SM8475")) return "8g1";
+        if (s.startsWith("SM7475")) return "7p2";
+        if (s.startsWith("SM8635") || s.startsWith("SM7675")) return "73x";
+        if (s.startsWith("SM8750") || s.startsWith("SM8735") || s.startsWith("SM8850") || s.startsWith("SM8845")
+                || s.startsWith("SM7635")) return "8xx";
+        if (gpu == 740) return "8g2";
+        if (gpu == 750) return "8g3";
+        if (gpu == 730) return "8g1";
+        if (gpu == 725) return "7p2";
+        if (gpu == 735 || gpu == 732) return "73x";
+        if (gpu == 710 || gpu == 720 || gpu == 722) return "71x";
+        if (gpu >= 600 && gpu < 700) return "6xx";
+        if (gpu >= 800 && gpu < 900) return "8xx";
+        return "";
+    }
+
+    // The one for this phone: what played well in this game on each chip (this modification's tests and the original's
+    // issues). "-" the system's (the Adreno 710's ran faster than Turnip), "" none known. On the 8 Gen 2 the system
+    // driver decides: Samsung's, and others from 676.70 on (the S23 Ultra's 676.79, a OnePlus 12R's 676.71; an AYN
+    // Thor's 676.53 didn't), set the Adreno 740 flag that the One UI build has - without it the screen flickers.
+    private String recommendedDriver(String[] dev) {
+        String g = dev[5], rec = "";
+        int gpu = gpuNumber(dev[3]), blob = 0;
+        try {
+            String[] b = dev[4].split("\\.");
+            if (b.length == 2) blob = Integer.parseInt(b[0]) * 1000 + Integer.parseInt(b[1]);
+        } catch (NumberFormatException ignored) {
+        }
+        switch (g) {
+            case "8g2":
+                rec = dev[0].equalsIgnoreCase("samsung") || blob >= 676070 ? "Turnip-v27.0.0-20261025-r5-8G2-OneUI.zip"
+                                                                            : "Turnip-v27.0.0-20261025-r5.zip";
+                break;
+            case "8g3": case "8g1": rec = "Turnip_v26.0.0_R8.zip"; break;
+            case "7p2": rec = "Turnip-710-720-722-v4.5-sw.zip"; break;
+            case "73x": rec = "Turnip_Gen8_V38_Patched.zip"; break;
+            case "71x": rec = "-"; break;
+            case "6xx": rec = "turnip_v24.3.0_R9v2.zip"; break;
+            case "8xx": rec = gpu == 840 ? "a8xx-turnip-gen8-sync-V29.zip" : "Turnip_Gen8_V38.zip"; break;
+        }
+        if (rec.isEmpty() || rec.equals("-")) return rec;
+        try {
+            String[] names = getAssets().list("drivers");
+            if (names != null) for (String n : names) if (n.equals(rec)) return rec;
+        } catch (IOException ignored) {
+        }
+        return "";
     }
 
     private File customDriver() throws IOException {

@@ -24,8 +24,8 @@ android {
         applicationId = "com.totkdroid.s23"
         minSdk = 30
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.2.1-s23-b6"
+        versionCode = 8
+        versionName = "0.2.1-s23-b7"
         ndk {
             abiFilters += "arm64-v8a"
         }
@@ -102,6 +102,10 @@ val prepareTotkRecompAndroid by tasks.registering {
     val libs = listOf("libSDL3.so", "libshaderc_shared.so", "libavcodec.so", "libavformat.so", "libavutil.so", "libswscale.so",
                       "libswresample.so")  // (libavcodec's Opus decoder needs libswresample)
     inputs.files(smaa, font, icon, background, touchSkin, logo)
+    // (S23) the Vulkan drivers the app comes with: src/drivers/catalogo.tsv and its packages
+    val drivers = file("src/drivers")
+    inputs.dir(drivers)
+    inputs.property("allDrivers", false)
     inputs.files(libs.map { depLib(it) }.filter { it.exists() })
     if (deps.resolve("gen").exists()) inputs.dir(deps.resolve("gen"))  // (the game code's builder, below)
     inputs.property("gameBuilder", project.findProperty("totk.gameBuilder")?.toString() ?: "false")
@@ -122,6 +126,20 @@ val prepareTotkRecompAndroid by tasks.registering {
         for (lib in libs)  // (FFmpeg's only once android/deps/build_ffmpeg.sh made them)
             if (depLib(lib).exists()) depLib(lib).copyTo(out.resolve("jniLibs/arm64-v8a/$lib"), overwrite = true)
         font.copyTo(out.resolve("assets/res/Baloo2-SemiBold.ttf"), overwrite = true)
+        // (S23) the drivers: every one in the catalogue for the Universal version, the Snapdragon 8 Gen 2's (group 8g2)
+        // for the S23 one - the app copies one out only when it's chosen (TOTKRecompAndroidActivity.installDriver)
+        val dOut = out.resolve("assets/drivers")
+        dOut.deleteRecursively()
+        dOut.mkdirs()
+        val keep = drivers.resolve("catalogo.tsv").readLines(Charsets.UTF_8).filter { l ->
+            l.isNotBlank() && (l.startsWith("#") || false || l.split('\t').getOrElse(1) { "" }.split(',').contains("8g2"))
+        }
+        dOut.resolve("catalogo.tsv").writeText(keep.joinToString("\n", postfix = "\n"), Charsets.UTF_8)
+        for (l in keep) if (!l.startsWith("#")) {
+            val n = l.substringBefore('\t')
+            drivers.resolve(n).copyTo(dOut.resolve(n), overwrite = true)
+        }
+        drivers.resolve("LEIA-ME.txt").copyTo(dOut.resolve("LEIA-ME.txt"), overwrite = true)
         deps.resolve("fonts/DejaVuSans.ttf").copyTo(out.resolve("assets/res/DejaVuSans.ttf"), overwrite = true)
         icon.copyTo(out.resolve("assets/res/icon.png"), overwrite = true)
         background.copyTo(out.resolve("assets/res/launcher-background.png"), overwrite = true)

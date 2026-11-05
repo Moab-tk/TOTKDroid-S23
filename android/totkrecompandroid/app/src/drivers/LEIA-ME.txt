@@ -1,0 +1,41 @@
+Drivers Vulkan que o app traz, todos do Turnip da Mesa (licença MIT e outras: https://docs.mesa3d.org/license.html),
+cada um com o seu autor e a sua fonte. Drivers da Qualcomm não vêm no app (não podem ser redistribuídos):
+quem quiser usa o botão Adicionar driver.
+Grupos: 8g2 Snapdragon 8 Gen 2; 8g3 8 Gen 3; 8g1 8 Gen 1 e 8+ Gen 1; 7p2 7+ Gen 2; 73x 8s Gen 3 e 7+ Gen 3;
+71x Adreno 710/720/722; 6xx Adreno 6xx; 8xx Adreno 8xx.
+
+Turnip-v27.0.0-20261105-r5-8G2-OneUI.zip
+  Banners Turnip 27.0.0 r5 (One UI), de The412Banner, 2026-11-05: https://github.com/The412Banner/Banners-Turnip
+  sha256 do original ff1fbb2117e4f79389a2f03a8a6005aa342485850611e456fcb90f409eb2f7ad
+
+Turnip-v27.0.0-20261105-r5.zip
+  Banners Turnip 27.0.0 r5, de The412Banner, 2026-11-05: https://github.com/The412Banner/Banners-Turnip
+  sha256 do original 0e00f9a85105d0df992858728d01dd9398df9eae478d27da35df3ce7690d4908
+
+Turnip-v27.0.0-20261025-r5-8G2-OneUI.zip
+  Banners Turnip 27.0.0 (One UI, testado), de The412Banner, 2026-10-25: https://github.com/The412Banner/Banners-Turnip
+  sha256 do original 688023aa3764e02e4945da4f168558ffd2e8ea59d4d37a23784deea2cb705a83
+
+Turnip-v27.0.0-20261025-r5.zip
+  Banners Turnip 27.0.0 (testado), de The412Banner, 2026-10-25: https://github.com/The412Banner/Banners-Turnip
+  sha256 do original 1190b310dbe32a669f4c2239d62a57f58c4452255162d144bb36f2758d0d0221
+
+Turnip_v27.0.0-R1-Oneui.zip
+  StevenMXZ Turnip 27.0.0 R1 (One UI), de StevenMXZ, 2026-10-19: https://github.com/StevenMXZ/Adreno-Tools-Drivers
+  sha256 do original e5b6ac03977cfbfb26608eefcbfc5117ed2189db1ddc1687aa98ea84a3429784
+
+Turnip_v27.0.0-R1.zip
+  StevenMXZ Turnip 27.0.0 R1, de StevenMXZ, 2026-10-19: https://github.com/StevenMXZ/Adreno-Tools-Drivers
+  sha256 do original 07938ef843a73dd47ebb88ba9c2d3bca011667bd2b657e3b4a75d9ba8ed591a0
+
+Turnip_Gen8_V38_Patched.zip
+  StevenMXZ Turnip Gen8 V38 Patched, de StevenMXZ, 2026-10-19: https://github.com/StevenMXZ/Adreno-Tools-Drivers
+  sha256 do original 2bbb279a3da7680503a54a51a3051c7a4302c8fb2a089f8b183b4b5d6ba9ac17
+
+Balemuni_Apex_v2_ULTIMATE_SD8Gen2.zip
+  Balemuni Apex 2 Ultimate (8 Gen 2), de Balemuni, 2026-08-26: https://github.com/Balemuni/Balemunis-Aurora
+  sha256 do original 810567af3bc849b3bb33f69868a5268e2cc5b922a979a732daf1a3b18e02df0a (recomprimido aqui, mesmo conteúdo: 33c92d72908b0de998d45efcc4032610beab94554c546e759eeb59e8812801f9)
+
+turnip_mrpurple_T30-toasted.adpkg.zip
+  Mr Purple Turnip T30, de MrPurple666, 2026-08-17: https://github.com/MrPurple666/purple-turnip
+  sha256 do original f65b2d3353fd4aa7190bb5426b94468e99ffea7a58a830bc0c4651db89353227

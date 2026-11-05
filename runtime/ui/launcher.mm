@@ -1560,10 +1560,100 @@ static std::string driver_shown(const std::string &file) {  // (the package's na
     size_t dot = file.rfind('.');
     return dot == std::string::npos ? file : file.substr(0, dot);
 }
-static std::string driver_recommended() {  // the package for this phone, "" none: the Adreno 740's two (assets/drivers)
-    const char *gpu = vk_gpu_name(), *brand = getenv("LARECOMP_DEVICE_BRAND");
-    if (!gpu || !strstr(gpu, "740")) return "";
-    return brand && !strcasecmp(brand, "samsung") ? "Turnip-v27.0.0-20261025-r5-8G2-OneUI.zip" : "Turnip-v27.0.0-20261025-r5.zip";
+// (S23 b14) The package for this phone, chosen by the activity (TOTKRecompAndroidActivity.recommendedDriver: its chip, GPU
+// and system driver version): a file of the catalogue, "-" the system's, "" none known
+static std::string driver_recommended() {
+    const char *r = getenv("LARECOMP_DRIVER_RECOMMENDED");
+    return r ? r : "";
+}
+// The drivers the app comes with, in tabs by chip: assets/drivers/catalogo.tsv (the activity's copy,
+// LARECOMP_DRIVER_CATALOG): file, groups, date, title, author, source, note in English, note in Portuguese. One is
+// copied to the list only when it's chosen (TOTKRecompAndroidActivity.installDriver).
+struct CatalogDriver {
+    std::string file, groups, date, title, author, source, note_en, note_pt;
+};
+static const std::vector<CatalogDriver> &driver_catalog() {
+    static std::vector<CatalogDriver> list;
+    static bool read;
+    if (read) return list;
+    read = true;
+    const char *p = getenv("LARECOMP_DRIVER_CATALOG");
+    FILE *f = p && *p ? fopen(p, "rb") : NULL;
+    if (!f) return list;
+    char line[4096];
+    while (fgets(line, sizeof line, f)) {
+        std::string l = line;
+        while (!l.empty() && (l.back() == '\n' || l.back() == '\r')) l.pop_back();
+        if (l.empty() || l[0] == '#') continue;
+        std::vector<std::string> c;
+        for (size_t s = 0;;) {
+            size_t tab = l.find('\t', s);
+            c.push_back(l.substr(s, tab == std::string::npos ? std::string::npos : tab - s));
+            if (tab == std::string::npos) break;
+            s = tab + 1;
+        }
+        if (c.size() >= 8) list.push_back({c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]});
+    }
+    fclose(f);
+    std::stable_sort(list.begin(), list.end(), [](const CatalogDriver &a, const CatalogDriver &b) { return a.date > b.date; });
+    return list;
+}
+static const CatalogDriver *catalog_find(const std::string &file) {
+    for (const CatalogDriver &d : driver_catalog())
+        if (d.file == file) return &d;
+    return NULL;
+}
+static bool catalog_in(const CatalogDriver &d, const char *group) {
+    return ("," + d.groups + ",").find(std::string(",") + group + ",") != std::string::npos;
+}
+struct DriverTab {
+    const char *group, *title;
+};
+static const DriverTab k_driver_tabs[] = {
+    {"8g2", "Snapdragon 8 Gen 2 (Adreno 740)"},
+    {"8g3", "Snapdragon 8 Gen 3 (Adreno 750)"},
+    {"8g1", "Snapdragon 8 Gen 1 and 8+ Gen 1 (Adreno 730)"},
+    {"8xx", "Snapdragon 8 Elite, 8s Gen 4 and 8 Elite Gen 5 (Adreno 8xx)"},
+    {"73x", "Snapdragon 8s Gen 3 and 7+ Gen 3 (Adreno 735, 732)"},
+    {"7p2", "Snapdragon 7+ Gen 2 (Adreno 725)"},
+    {"71x", "Snapdragon 7s Gen 2, 7 Gen 3, 7 Gen 4, 6 Gen 1 and 6 Gen 3 (Adreno 710, 720, 722)"},
+    {"6xx", "Snapdragon 888, 870, 865, 855, 845 and 7 Gen 1 (Adreno 6xx)"},
+};
+// This phone as the activity saw it (LARECOMP_DEVICE_INFO): brand, system, chip, GPU, system driver version, tab
+static std::vector<std::string> device_info() {
+    std::vector<std::string> v;
+    const char *p = getenv("LARECOMP_DEVICE_INFO");
+    std::string s = p ? p : "";
+    for (size_t a = 0;;) {
+        size_t tab = s.find('\t', a);
+        v.push_back(s.substr(a, tab == std::string::npos ? std::string::npos : tab - a));
+        if (tab == std::string::npos) break;
+        a = tab + 1;
+    }
+    v.resize(6);
+    return v;
+}
+static bool driver_install(const std::string &file) {  // copied from the app to the list (true: it's there)
+    if (access((drivers_dir() + "/" + file).c_str(), F_OK) == 0) return true;
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    jobject act = (jobject)SDL_GetAndroidActivity();
+    if (!env || !act) return false;
+    jclass c = env->GetObjectClass(act);
+    jmethodID m = env->GetStaticMethodID(c, "installDriver", "(Ljava/lang/String;)Z");
+    bool ok = false;
+    if (m) {
+        jstring s = env->NewStringUTF(file.c_str());
+        ok = env->CallStaticBooleanMethod(c, m, s);
+        env->DeleteLocalRef(s);
+    }
+    if (env->ExceptionCheck()) env->ExceptionClear(), ok = false;
+    env->DeleteLocalRef(c);
+    env->DeleteLocalRef(act);
+    return ok;
+}
+static std::string catalog_date(const std::string &d) {  // 2026-11-05 -> 05/11/2026 in Portuguese
+    if (d.size() == 10 && settings_host_portuguese()) return d.substr(8, 2) + "/" + d.substr(5, 2) + "/" + d.substr(0, 4);
+    return d;
 }
 static void note_row(const std::string &msg, bool failed = false) {  // a line under the rows
     if (msg.empty()) return;
@@ -1612,22 +1702,67 @@ static void prelaunch_rows(float sc) {
             pthread_mutex_unlock(&g_lock);
         };
         const std::string recommended = driver_recommended();
-        for (const std::string &f : files) {
+        const std::vector<CatalogDriver> &cat = driver_catalog();
+        std::vector<std::string> dev = device_info();  // (brand, system, chip, GPU, system driver, tab)
+        auto choose = [&](const std::string &f) {  // (a driver of the catalogue: copied to the list first)
+            if (f != "-" && !driver_install(f)) {
+                pthread_mutex_lock(&g_lock);
+                g_driver_msg = tr("That driver couldn't be copied: check the free space.");
+                pthread_mutex_unlock(&g_lock);
+                return;
+            }
+            pick(f);
+        };
+        if (!dev[0].empty()) {  // (S23 b14) this phone, as the recommendation saw it
+            std::string s = dev[0];
+            for (int i = 1; i <= 3; i++)
+                if (!dev[i].empty()) s += ", " + dev[i];
+            if (!dev[4].empty()) s += std::string(", ") + tr("system driver") + " " + dev[4];
+            char m[400];
+            snprintf(m, sizeof m, tr("This phone: %s"), s.c_str());
+            note_row(m);
+        }
+        if (!recommended.empty()) {
+            const CatalogDriver *r = catalog_find(recommended);
+            std::string name = recommended == "-" ? std::string(tr("the system driver")) : r ? r->title : driver_shown(recommended);
+            std::string label = std::string(tr("Recommended for this phone")) + ": " + name;
+            std::string desc = tr("Chosen by this phone's chip, GPU and system driver, from what played well in this game. It's "
+                                  "chosen by itself on the first start; you can change it whenever you like.");
+            if (r) desc += "\n\n" + (settings_host_portuguese() ? r->note_pt : r->note_en);
+            bool on = recommended == "-" ? active == "-" : active == recommended;
+            if (opt_radio(label.c_str(), on, desc.c_str())) choose(recommended);
+        }
+        static std::string open_tab;  // (the one open: this phone's at first)
+        static bool open_set;
+        if (!open_set) open_set = true, open_tab = dev[5];
+        for (const DriverTab &tab : k_driver_tabs) {
+            int n = 0;
+            for (const CatalogDriver &d : cat) n += catalog_in(d, tab.group);
+            if (!n) continue;
+            bool open = open_tab == tab.group;
+            char count[48];
+            snprintf(count, sizeof count, tr(open ? "%d - close" : "%d - open"), n);
+            if (opt_action(tr(tab.title), count, tr("The drivers for these chips, the newest at the top. Choosing one copies it to "
+                                                    "the list; it's used from the next start."), false))
+                open_tab = open ? "" : tab.group;
+            if (!open) continue;
+            opt_indent(1);
+            for (const CatalogDriver &d : cat) {
+                if (!catalog_in(d, tab.group)) continue;
+                std::string label = d.title;
+                if (d.file == recommended) label += std::string(" - ") + tr("Recommended");
+                char by[300];
+                snprintf(by, sizeof by, tr("By %s, %s: %s"), d.author.c_str(), catalog_date(d.date).c_str(), d.source.c_str());
+                std::string desc = (settings_host_portuguese() ? d.note_pt : d.note_en) + "\n\n" + by;
+                if (driver_shown(d.file) == in_use) desc = std::string(tr("In use now.")) + "\n\n" + desc + "\n\n" + vk_driver_desc();
+                if (opt_radio(label.c_str(), d.file == active, desc.c_str())) choose(d.file);
+            }
+            opt_indent(-1);
+        }
+        for (const std::string &f : files) {  // (the others on the list: added by the player, or copied by an older version)
+            if (catalog_find(f)) continue;
             std::string desc = driver_shown(f) == in_use ? std::string(tr("In use now.")) + "\n\n" + vk_driver_desc() : std::string(tr(about));
-            // (S23) the two the app comes with: which phones each one is for
-            if (f == "Turnip-v27.0.0-20261025-r5-8G2-OneUI.zip")
-                desc = std::string(tr("For the Snapdragon 8 Gen 2 with Samsung's One UI, as the Galaxy S23. On other phones it can make the screen flicker.")) + "\n\n" + desc;
-            else if (f == "Turnip-v27.0.0-20261025-r5.zip")
-                desc = std::string(tr("For the Snapdragon 8 Gen 2 and other Adreno 6xx and 7xx GPUs. If the screen flickers on a Galaxy S23, use the One UI one.")) + "\n\n" + desc;
-            else if (f == "Turnip-v27.0.0-20261101-r4-8G2-OneUI.zip")
-                desc = std::string(tr("A newer build of the driver for the Snapdragon 8 Gen 2 with Samsung's One UI. Not tested on this game: the recommended one is the tested one.")) + "\n\n" + desc;
-            else if (f == "Turnip-v27.0.0-20261101-r4.zip")
-                desc = std::string(tr("A newer build of the driver for Adreno 6xx and 7xx GPUs. Not tested on this game: the recommended one is the tested one.")) + "\n\n" + desc;
-            else if (f == "Turnip-v27.0.0-20261101-r4-A8xx.zip")
-                desc = std::string(tr("An experimental driver for Adreno 8xx GPUs, as the Snapdragon 8 Elite. Not tested on this game.")) + "\n\n" + desc;
-            std::string label = driver_shown(f);
-            if (f == recommended) label += std::string(" - ") + tr("Recommended");
-            if (opt_radio(label.c_str(), f == active, desc.c_str())) pick(f);
+            if (opt_radio(driver_shown(f).c_str(), f == active, desc.c_str())) pick(f);
         }
         if (opt_radio("Use the system driver", active == "-" || active.empty(), about)) pick("-");
         if (opt_button("Add driver", "A Turnip package (.zip) from your files. It joins this list and is chosen; the others are kept."))
@@ -1783,8 +1918,8 @@ static void recommended_apply(bool lighter) {
     // system throttling is off it cut the scene without need: hitches, 2026-11-05)
     g_settings.heat_control = false;
     settings_save();
-    std::string d = driver_recommended();
-    if (!d.empty() && access((drivers_dir() + "/" + d).c_str(), F_OK) == 0) driver_set_active(d);
+    std::string d = driver_recommended();  // (copied to the list first: b14 copies only the chosen ones)
+    if (d == "-" || (!d.empty() && driver_install(d))) driver_set_active(d);
     android_call("restartApp");
 }
 static int g_block_open = -1, g_block_ask;  // the block open (-1: the list); 1 replace it? 2 load it? 3 delete it?

@@ -1,9 +1,0 @@
-Mesa Turnip, builds of https://github.com/The412Banner/Banners-Turnip
-release v27.0.0-20261025-r5, Mesa commit ab1502f. Mesa is under the MIT license and others: https://docs.mesa3d.org/license.html
-sha256 1190b310dbe32a669f4c2239d62a57f58c4452255162d144bb36f2758d0d0221  Turnip-v27.0.0-20261025-r5.zip
-sha256 688023aa3764e02e4945da4f168558ffd2e8ea59d4d37a23784deea2cb705a83  Turnip-v27.0.0-20261025-r5-8G2-OneUI.zip
-
-release v27.0.0-20261101-r4, Mesa commit 01bab93. Builds automáticas, sem teste em aparelho segundo o próprio autor.
-sha256 93406b6a8b5076f89c6a8b511f945c110262de599814dc0d724ccde066981974  Turnip-v27.0.0-20261101-r4-8G2-OneUI.zip
-sha256 eca96388c9f9eaba56fe349e1fcab07806916270906bf67ba9f2d946bfa0954e  Turnip-v27.0.0-20261101-r4.zip
-sha256 5026d97707866bf06b65ef82e056a7fb0c2bd4474e05675d5ac8de89e6ce4222  Turnip-v27.0.0-20261101-r4-A8xx.zip
