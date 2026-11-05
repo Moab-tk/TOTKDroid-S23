@@ -89,6 +89,15 @@ static double heat_factor(double now) {
     // (a phone with no SoC zone, soc_temp_c -1: the headroom alone says it cooled down - it alone made it hot)
     bool soc = s.soc_temp_c > 0;
     bool cool = (known || soc) && (!known || s.headroom < 0.75) && (!soc || s.soc_temp_c < 72);
+    // (S23 b6) Settings > Video > How it decides: the chip's temperature. On a phone whose system throttling is off
+    // (Brevent, AxManager) the warning comes without a cut: the Galaxy S23 Ultra said "severe", headroom 0.90-0.92, at a
+    // SoC of 70-76 C, and the scene went 100 -> 70% in 40 s for nothing (2026-11-04). Here only the SoC as the
+    // performance overlay shows it: over the limit, down; 8 C under it, up again. No SoC zone: the warning, as above.
+    if (g_settings.heat_mode == 1 && soc) {
+        int lim = g_settings.heat_limit;
+        hot = s.soc_temp_c >= lim;
+        cool = s.soc_temp_c < lim - 8;
+    }
     double was = factor;
     if (g_settings.heat_control) {
         if (hot && factor > 0.7 && now - last_change >= 20) factor -= 0.1;

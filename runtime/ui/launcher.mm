@@ -1419,7 +1419,22 @@ void launcher_video_options(void) {
 
     changed |= opt_toggle("Temperature control", &g_settings.heat_control, false,
                           "When the phone gets hot, the 3D image gets a little softer in steps, to delay the system cutting the "
-                          "GPU, and sharper again when it cools down. Each change can show a short hitch. Applies at once.");
+                          "GPU, and sharper again when it cools down. Each change can show a short hitch. In this game the gain "
+                          "is small in open areas, where the processor is the limit. Applies at once.");
+    if (g_settings.heat_control) {  // (S23 b6: nvn/output_scale.c heat_factor)
+        opt_indent(1);
+        const char *modes[] = {"Android's warning", "Chip temperature"};
+        changed |= opt_choice("How it decides", &g_settings.heat_mode, modes, 2, 0,
+                              "Android's warning: the system's own heat warning, which comes just before it cuts the GPU - for a "
+                              "phone as it came. Chip temperature: only when the chip (SoC, as the performance overlay shows it) "
+                              "passes the limit below - for a phone whose system throttling was turned off (Brevent, AxManager "
+                              "and the like), where the warning comes without any cut. Applies at once.");
+        if (g_settings.heat_mode == 1)
+            changed |= opt_int("Chip limit", &g_settings.heat_limit, 75, 95, 5, 85, "%d \xc2\xb0" "C",
+                               "The chip temperature where the image starts getting softer. It gets sharper again 8 \xc2\xb0" "C "
+                               "below it. Applies at once.");
+        opt_indent(-1);
+    }
 
     opt_section("Advanced");
     {   // (runtime/settings.h gpu_heap / inplace_reads / turnip_lrz / log_file: for GPUs where a Turnip path draws wrong)
