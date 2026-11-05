@@ -46,7 +46,8 @@ com a atualização **1.4.3** aplicada (`exefs` e `romfs`). Não serão dadas in
     funcionar no TOTK a partir da b6);
   - orçamento de 30 FPS avisado ao Android, para ele não baixar o processador além da conta;
   - shaders: quem espera faz a tarefa, tabelas maiores e montagem antecipada dos pipelines já vistos;
-  - cinco drivers Turnip dentro do app, configurações recomendadas com um toque e 8 blocos de configurações salvas;
+  - nove drivers Turnip para o 8 Gen 2 dentro do app, numa aba, com o recomendado escolhido pelo aparelho (a partir da
+    b7; veja [DRIVERS.md](DRIVERS.md)), configurações recomendadas com um toque e 8 blocos de configurações salvas;
   - interface maior, em cartões, com textos em português;
   - revisão do código: esperas no relógio certo, configurações gravadas com segurança, conferências no kernel e na
     linha de desenho.

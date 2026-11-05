@@ -46,7 +46,8 @@ applied (`exefs` and `romfs`). No instructions on how to get it will be given.
     in TOTK from b6 on);
   - a 30 FPS budget told to Android, so it doesn't lower the processor too far;
   - shaders: whoever waits does the job, larger tables and pipelines already seen built ahead;
-  - five Turnip drivers inside the app, one-tap recommended settings and 8 saved settings blocks;
+  - nine Turnip drivers for the 8 Gen 2 inside the app, in one tab, the recommended one picked by the phone (from b7 on;
+    see [DRIVERS.md](DRIVERS.md)), one-tap recommended settings and 8 saved settings blocks;
   - a larger interface, in cards;
   - a code review: waits on the right clock, settings written safely, checks in the kernel and the render thread.
 - **Temperature control (optional, off by default):** lowers the scene in steps before the system cuts the GPU. In b4 it

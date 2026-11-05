@@ -1,6 +1,6 @@
 # O que mudou em relação ao original
 
-Projeto original: [TOTKDroid](https://github.com/mamcjr/TOTKDroid), de mamcjr. Todas as versões, da b1 à b6, partem da
+Projeto original: [TOTKDroid](https://github.com/mamcjr/TOTKDroid), de mamcjr. Todas as versões, da b1 à b7, partem da
 `0.2.1-beta`. A versão de cada etapa está no histórico do repositório (ramo `s23`).
 
 O motor é o mesmo do BOTWRecompAndroid. Muito do que está aqui veio da versão S23 do BOTW
@@ -102,6 +102,14 @@ de todas as 45 configurações: se cada uma chega ao jogo e quando passa a valer
 - Depois do primeiro teste (no BOTW), os analógicos ficaram leves no meio do curso: na metade, cerca de um quarto do
   movimento; inteiro só na borda.
 - **Jogada no S23 Ultra (05/11/2026):** tudo rodando bem, texturas boas. A grade dos quadros ainda não foi medida.
+
+### b7: drivers numa aba, recomendado pelo aparelho (05/11/2026)
+
+- A mesma mudança da b14 do BOTW: a aba do Snapdragon 8 Gen 2 com 9 drivers, o mais novo em cima
+  ([DRIVERS.md](DRIVERS.md)). Na primeira vez, o app lê o celular e escolhe o testado: One UI em Samsung e com driver
+  do sistema 676.70 ou mais novo, o padrão nos outros. Só o escolhido é copiado para o celular.
+- Os de 01/11 saíram; os que já tinham sido copiados continuam na lista.
+- **Não foi testada jogando.**
 
 ## O que não foi modificado
 

@@ -1244,7 +1244,7 @@ public class TOTKRecompAndroidActivity extends SDLActivity {
         File dir = new File(getExternalFilesDir(null), "drivers");
         dir.mkdirs();
         String[] dev = deviceInfo();
-        setenv("LARECOMP_DEVICE_INFO", String.join("\t", dev));
+        envSet("LARECOMP_DEVICE_INFO", String.join("\t", dev));
         if (!qualcomm) return;
         File cat = new File(getFilesDir(), "drivers-catalogo.tsv");
         try (InputStream in = getAssets().open("drivers/catalogo.tsv")) {
@@ -1252,9 +1252,9 @@ public class TOTKRecompAndroidActivity extends SDLActivity {
         } catch (IOException none) {
             return;
         }
-        setenv("LARECOMP_DRIVER_CATALOG", cat.getPath());
+        envSet("LARECOMP_DRIVER_CATALOG", cat.getPath());
         String rec = recommendedDriver(dev);
-        setenv("LARECOMP_DRIVER_RECOMMENDED", rec);
+        envSet("LARECOMP_DRIVER_RECOMMENDED", rec);
         File active = new File(dir, "active.txt");
         if (active.exists()) return;
         File[] had = dir.listFiles((d, x) -> DRIVER_FILE.matcher(x).find());
@@ -1267,6 +1267,14 @@ public class TOTKRecompAndroidActivity extends SDLActivity {
             o.write(pick.getBytes());
         }
         Log.i(TAG, "Vulkan driver: first start, " + pick + " chosen for " + String.join(" | ", dev));
+    }
+
+    private static void envSet(String key, String value) {  // (setenv, its errors in the log: the drivers' info is optional)
+        try {
+            setenv(key, value);
+        } catch (Exception e) {
+            Log.w(TAG, key + ": " + e);
+        }
     }
 
     // A driver of the catalogue copied to the list (Settings > Files > Vulkan driver, when it's chosen): true when it's there
