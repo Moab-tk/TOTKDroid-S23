@@ -109,7 +109,11 @@ de todas as 45 configurações: se cada uma chega ao jogo e quando passa a valer
   ([DRIVERS.md](DRIVERS.md)). Na primeira vez, o app lê o celular e escolhe o testado: One UI em Samsung e com driver
   do sistema 676.70 ou mais novo, o padrão nos outros. Só o escolhido é copiado para o celular.
 - Os de 01/11 saíram; os que já tinham sido copiados continuam na lista.
-- **Não foi testada jogando.**
+- **Testada no S23 Ultra (05/11/2026):** 15 minutos jogando com a cena a 50%, FSR 1, SMAA e o controle de temperatura
+  ligado: 30 FPS em quase todas as janelas (uma de 27), nenhum erro de driver. O sistema freou a GPU de leve (até 475
+  MHz) com a bateria a 31 °C e a pele a 42-45 °C: pele e chip também contam, não só a bateria.
+- **Botão rápido do movimento pelos analógicos redondo e pequeno** (pedido do Moab), com um analógico desenhado, no lugar
+  da pílula com texto: cobria demais a tela junto com os controles de toque.
 
 ## O que não foi modificado
 
