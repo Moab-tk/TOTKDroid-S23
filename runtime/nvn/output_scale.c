@@ -149,6 +149,25 @@ void output_scale(double dw, double dh, bool reshape_allowed, double now, double
         if (mode != RES_MATCH) hs = fmin(base * share, hs);
     }
     hs = fmax(hs * heat_factor(now), 0.1);
+    {   // (S23, TOTK) The scene's targets are scaled one by one from their guest sizes (TOTK's scene is 1600x896, its
+        // halves down to an eighth 200x112): at the temperature control's 0.9 of the .75x option (0.675) the scene came
+        // out 605 lines and its quarter 151 against 605 / 4 = 151.2, and the passes that read a smaller target at the
+        // full one's edges read it off by a fraction of a texel - dotted, shard-like edges and a blown-out sun
+        // (2026-11-05: gone with the control off). A whole multiple of 1 / 8 keeps 1600x896 and every half down to the
+        // eighth whole: 0.9 -> 0.875, 0.8 -> 0.75, 0.675 -> 0.625; 0.75, 0.5 and whole scales stay; Match display's 1.2
+        // on a 1080-line output -> 1.125. LARECOMP_SCALE_SNAP=0: as before.
+        static int snap = -1;
+        if (snap < 0) snap = !getenv("LARECOMP_SCALE_SNAP") || atoi(getenv("LARECOMP_SCALE_SNAP"));
+        if (snap && fabs(hs * 8 - round(hs * 8)) > 1e-6) {
+            double s = fmax(floor(hs * 8 + 1e-6) / 8, 0.125);
+            static double last_in = -1;
+            if (hs != last_in) {
+                last_in = hs;
+                LOG("[scale] scene %.3f -> %.3f (%.0f lines: its halves whole)\n", hs, s, s * 896);
+            }
+            hs = s;
+        }
+    }
     o->scene_sx = hs * shape; o->scene_sy = hs;
     double scap = fmin(MAX_TEX / (1920.0 * o->scene_sx), MAX_TEX / (1080.0 * o->scene_sy));
     if (scap < 1.0) { o->scene_sx *= scap; o->scene_sy *= scap; }

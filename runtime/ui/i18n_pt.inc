@@ -690,6 +690,8 @@
  "A câmera gira enquanto um dedo se move na metade direita da tela e para quando ele para, como nos jogos de tiro de celular, em vez de um analógico segurado para um lado."},
 {"Drag sensitivity",
  "Sensibilidade do arrasto"},
+{"Higher: a shorter drag turns the camera at full speed. The game's own top speed stays: past about 400% only slow drags change.",
+ "Mais alto: um arrasto menor já gira a câmera na velocidade máxima. O limite de velocidade do próprio jogo continua: acima de uns 400% só mudam os arrastos lentos."},
 {"Sticks only while touched",
  "Analógicos só ao tocar"},
 {"The sticks are drawn only while a finger holds them, for a cleaner screen.",

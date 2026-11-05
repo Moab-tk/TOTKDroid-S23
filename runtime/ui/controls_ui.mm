@@ -88,8 +88,10 @@ static void touch_layout_draw(void) {
         float sens = g_settings.touch_drag_sens * 100;
         ImGui::TextUnformatted(tr("Drag sensitivity"));
         ImGui::SetNextItemWidth(-1);
-        if (ImGui::SliderFloat("##DragSens", &sens, 25, 300, "%.0f%%")) g_settings.touch_drag_sens = sens / 100;
+        if (ImGui::SliderFloat("##DragSens", &sens, 25, 800, "%.0f%%")) g_settings.touch_drag_sens = sens / 100;
         if (ImGui::IsItemDeactivatedAfterEdit()) settings_save();
+        hint("Higher: a shorter drag turns the camera at full speed. The game's own top speed stays: past about 400% only "
+             "slow drags change.");
     }
     if (ImGui::Checkbox(tr("Sticks only while touched"), &g_settings.touch_sticks_hidden)) settings_save();
     hint("The sticks are drawn only while a finger holds them, for a cleaner screen.");
