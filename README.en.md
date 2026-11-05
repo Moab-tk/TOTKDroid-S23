@@ -42,14 +42,16 @@ applied (`exefs` and `romfs`). No instructions on how to get it will be given.
 - **Based on version 0.2.1 of the original**, the newest so far.
 - **Brought over from the S23 version of BOTW** ([BOTWRecompAndroid-S23](https://github.com/Moab-tk/BOTWRecompAndroid-S23)),
   which uses the same engine:
-  - steady 30 FPS frames, with the screen at 60 Hz and each frame following its real rhythm;
+  - steady 30 FPS frames, with the screen at 60 Hz (the lock that holds each frame to the screen's real rhythm only works
+    in TOTK from b6 on, still being tested);
   - a 30 FPS budget told to Android, so it doesn't lower the processor too far;
   - shaders: whoever waits does the job, larger tables and pipelines already seen built ahead;
   - five Turnip drivers inside the app, one-tap recommended settings and 8 saved settings blocks;
   - a larger interface, in cards;
   - a code review: waits on the right clock, settings written safely, checks in the kernel and the render thread.
 - **Temperature control (optional, off by default):** lowers the scene in steps before the system cuts the GPU. In b4 it
-  caused shards on the edges and a blown-out sun; b5 fixes the reason (see [MUDANCAS-S23.md](MUDANCAS-S23.md)).
+  caused shards on the edges and a blown-out sun; b5 fixes the reason, and b6 lets it decide by Android's warning or by
+  the chip's temperature (see [MUDANCAS-S23.md](MUDANCAS-S23.md)).
 - **Camera drag sensitivity up to 800%.**
 
 ## Installing

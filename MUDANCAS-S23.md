@@ -1,6 +1,6 @@
 # O que mudou em relação ao original
 
-Projeto original: [TOTKDroid](https://github.com/mamcjr/TOTKDroid), de mamcjr. Todas as versões, da b1 à b5, partem da
+Projeto original: [TOTKDroid](https://github.com/mamcjr/TOTKDroid), de mamcjr. Todas as versões, da b1 à b6, partem da
 `0.2.1-beta`. A versão de cada etapa está no histórico do repositório (ramo `s23`).
 
 O motor é o mesmo do BOTWRecompAndroid. Muito do que está aqui veio da versão S23 do BOTW
@@ -12,13 +12,13 @@ O motor é o mesmo do BOTWRecompAndroid. Muito do que está aqui veio da versão
 |---|---|
 | Pacote | `com.totkdroid.s23`, instala ao lado do original; nome do app "TOTK S23" |
 | Compilação | Feita para o processador do Snapdragon 8 Gen 2 |
-| Ritmo dos quadros | Tela em 60 Hz com quadros presos ao ritmo real dela (quadros regulares a 30 FPS) |
+| Ritmo dos quadros | Tela em 60 Hz; a partir da b6, quadros presos ao ritmo real dela (quadros regulares a 30 FPS) |
 | Processador | Orçamento de 30 FPS avisado ao Android (ADPF) |
 | Shaders | Quem espera faz a tarefa, tabelas maiores, registro das esperas longas, montagem antecipada |
 | Drivers | Cinco drivers Turnip dentro do app, com licenças; o recomendado escolhido pelo celular |
 | Configurações | Recomendadas com um toque, 8 blocos salvos, gravação segura |
 | Interface | Maior, em cartões, tamanho do texto ajustável, textos em português |
-| Calor | Controle de temperatura opcional, com a escala da cena em tamanhos inteiros (b5) |
+| Calor | Controle de temperatura opcional: escala em tamanhos inteiros (b5); decide pelo aviso do Android ou pela temperatura do chip (b6) |
 | Toque | Sensibilidade do arrasto da câmera até 800% |
 | Testes | Chaves `LARECOMP_*` só com `testes.txt`, que só o `adb` cria |
 
@@ -69,6 +69,28 @@ O motor é o mesmo do BOTWRecompAndroid. Muito do que está aqui veio da versão
 - Sensibilidade do arrasto da câmera até 800% (era 300%), com uma dica: acima de uns 400% o direcional virtual já fica
   todo inclinado, e a câmera não gira mais rápido que o máximo do próprio jogo.
 - **Ainda não foi testada jogando.** Por isso a versão na aba Releases é a b4; a b5 vai para lá depois do teste.
+
+### b6: consertos da análise do código e auditoria das configurações (05/11/2026)
+
+Feita a partir de uma análise do código inteiro do TOTK (14 achados, nenhum que fechasse o jogo) e de uma conferência
+de todas as 45 configurações: se cada uma chega ao jogo e quando passa a valer.
+
+- **Quadros regulares a 30 FPS de verdade:** no TOTK a opção só pedia a tela em 60 Hz; a parte que segura cada quadro no
+  ritmo da tela só existia para o BOTW. Agora o TOTK também tem a grade dos quadros. Só a 30 FPS com a opção ligada;
+  desligada, tudo como antes. `LARECOMP_TOTK_GRID=0` desliga só isso. **Ainda não medido no S23.**
+- **Controle de temperatura:** escolha de como decide: pelo aviso do Android (como antes) ou pela temperatura do chip,
+  com o limite de 75 a 95 °C (85 por padrão). Num celular com o limitador térmico do sistema desligado, o aviso do
+  Android vinha com o chip a 70-76 °C e cortava a imagem sem precisar.
+- **Configurações recomendadas** desligam o controle de temperatura (antes ele ficava como estava).
+- **GPU sempre acordada** (opção de teste) volta a desligar quando o app vai para o segundo plano: a função nativa tinha
+  o nome do BOTW e o Java do TOTK não a achava.
+- Textos: proporção da tela (o Livre já enche a tela larga no TOTK, e vale ao começar o jogo de novo), versões (só a
+  1.4.3), créditos do TOTK, saves com os nomes do TOTK, arquivo de registro e de falhas com o nome do TOTK
+  (`totkrecomp-crash.txt`), "Bateria" e "conectado" em português, a cena contada como 1600x896.
+- Robustez: arquivo de configurações salvo no Windows (fim de linha) funciona; memória física só dentro da janela do
+  jogo; a lista de pipelines conhecidos é gravada sem segurar a trava da linha de desenho.
+- Medição nova no registro: `[prog]`, uma vez por minuto, quantos programas de shader o jogo descartou e quanto esperou.
+- **Não foi testada jogando.**
 
 ## O que não foi modificado
 

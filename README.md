@@ -42,7 +42,8 @@ com a atualização **1.4.3** aplicada (`exefs` e `romfs`). Não serão dadas in
 - **Baseada na versão 0.2.1 do original**, a mais nova até agora.
 - **Trazido da versão S23 do BOTW** ([BOTWRecompAndroid-S23](https://github.com/Moab-tk/BOTWRecompAndroid-S23)), que
   usa o mesmo motor:
-  - quadros regulares a 30 FPS, com a tela em 60 Hz e cada quadro seguindo o ritmo real dela;
+  - quadros regulares a 30 FPS, com a tela em 60 Hz (a trava que segura cada quadro no ritmo real da tela só passa a
+    funcionar no TOTK na b6, ainda em teste);
   - orçamento de 30 FPS avisado ao Android, para ele não baixar o processador além da conta;
   - shaders: quem espera faz a tarefa, tabelas maiores e montagem antecipada dos pipelines já vistos;
   - cinco drivers Turnip dentro do app, configurações recomendadas com um toque e 8 blocos de configurações salvas;
@@ -50,8 +51,8 @@ com a atualização **1.4.3** aplicada (`exefs` e `romfs`). Não serão dadas in
   - revisão do código: esperas no relógio certo, configurações gravadas com segurança, conferências no kernel e na
     linha de desenho.
 - **Controle de temperatura (opcional, desligado por padrão):** reduz a cena por etapas antes de o sistema cortar a
-  GPU. Na b4 ele fazia cacos nas bordas e o sol estourado; a b5 corrige o motivo (veja em
-  [MUDANCAS-S23.md](MUDANCAS-S23.md)).
+  GPU. Na b4 ele fazia cacos nas bordas e o sol estourado; a b5 corrige o motivo, e a b6 deixa escolher se ele decide
+  pelo aviso do Android ou pela temperatura do chip (veja em [MUDANCAS-S23.md](MUDANCAS-S23.md)).
 - **Sensibilidade do arrasto da câmera até 800%.**
 
 ## Instalando
