@@ -1566,7 +1566,7 @@ static void prelaunch_rows(float sc) {
     {
         std::string version = version_name(rt_game_version());
         if (opt_action("Versions and setup", version.c_str(),
-                       "Versions 1.0.0, 1.6.0, 1.8.2 and 1.9.0 can be set up side by side, each with its own saves."))
+                       "The game files of version 1.4.3, the only one this app runs: where they are, and setting them up again."))
             g_open_files = true;
     }
 
@@ -1585,7 +1585,7 @@ static void prelaunch_rows(float sc) {
         std::vector<std::string> files = driver_files();
         std::string active = driver_active();
         if (active.empty() && !files.empty()) active = files[0];
-        // (a package taken off the list: the activity loads the first one then - BOTWRecompAndroidActivity.customDriver)
+        // (a package taken off the list: the activity loads the first one then - TOTKRecompAndroidActivity.customDriver)
         if (active != "-" && !active.empty() && std::find(files.begin(), files.end(), active) == files.end())
             active = files.empty() ? "-" : files[0];
         const char *about = "The game runs on the system's driver, lighting included. On Adreno GPUs, Mesa's Turnip driver runs "
@@ -1698,9 +1698,9 @@ static void prelaunch_rows(float sc) {
         pthread_mutex_lock(&g_lock);
         std::string folder = g_log_folder;
         pthread_mutex_unlock(&g_lock);
-        const char *log_about = "Writes what the app reports (GPU, driver, errors) to botwrecomp-log.txt in a folder you choose (create "
-                                "one, e.g. Download/TOTKDroid), to open on the phone and send with a bug report. Turn it on and play "
-                                "until the problem shows; after a crash, the run before is kept as botwrecomp-log-previous.txt.";
+        const char *log_about = "Writes what the app reports (GPU, driver, errors) to totkrecomp-log.txt in a folder you choose (create "
+                                "one, e.g. Download/TOTKRecomp), to open on the phone and send with a bug report. Turn it on and play "
+                                "until the problem shows; after a crash, the run before is kept as totkrecomp-log-previous.txt.";
         if (opt_toggle("Save a log file", &g_settings.log_file, false, log_about)) {
             changed = true;
             if (g_settings.log_file && folder.empty()) android_call("pickLogFolder");  // (then nativeLogFolderPicked)
@@ -1718,6 +1718,7 @@ static void prelaunch_rows(float sc) {
                    "LAS Recomp, by peiikai (MIT license), the recompiler and runtime everything starts from, and "
                    "LASRecompAndroid, by mamcjr, its Android port.");
         opt_action("Other projects", "",
+                   "MacNativeGames (the 1.4.3 fixes), valentderah/totk-pc-recomp, BOTWRecompAndroid by mamcjr. "
                    "SavageWindRecomp, by Revivedx. LASRecomp-Android-Plus, by Nycolazs. The zeldaret/botw decompilation and "
                    "open-ead/sead. AMD FSR 1, Snapdragon GSR and SMAA. "
                    "libadrenotools. Mesa's Turnip driver, in The412Banner's builds.");

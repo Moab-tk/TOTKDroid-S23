@@ -492,11 +492,11 @@ static void crash_handler(int sig, siginfo_t *si, void *ctx) {
         extern void vk_gpu_turbo_off_now(void);
         vk_gpu_turbo_off_now();  // (the kernel keeps it after the app: android_driver.c)
     }
-    {   // (S23) first, before anything else can go wrong: <data root>/botwrecomp-crash.txt (crash_file.h)
+    {   // (S23) first, before anything else can go wrong: <data root>/totkrecomp-crash.txt (crash_file.h)
         static atomic_int written;
         if (!atomic_exchange(&written, 1)) {
             char path[1100];
-            snprintf(path, sizeof path, "%s/botwrecomp-crash.txt", rt_data_root());
+            snprintf(path, sizeof path, "%s/totkrecomp-crash.txt", rt_data_root());
             crash_file_write(path, sig, si->si_code, fa, pc, lr, uc->uc_mcontext.sp, uc->uc_mcontext.regs[29],
                              (const uint64_t *)uc->uc_mcontext.regs, 31);
         }
@@ -576,7 +576,7 @@ void plat_terminate(void) {
     _exit(0);
 }
 
-JNIEXPORT void JNICALL Java_com_botwrecompandroid_BOTWRecompAndroidActivity_nativeGpuTurbo(JNIEnv *env, jclass cls, jboolean front) {
+JNIEXPORT void JNICALL Java_com_totkrecompandroid_TOTKRecompAndroidActivity_nativeGpuTurbo(JNIEnv *env, jclass cls, jboolean front) {
     extern void vk_gpu_turbo(bool front);
     vk_gpu_turbo(front);
 }
