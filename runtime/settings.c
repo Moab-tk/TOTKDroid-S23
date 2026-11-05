@@ -237,6 +237,10 @@ void settings_load(void) {
         char val[128] = "";
         if (sscanf(line, " %63[^= ] = %127[^\n]", key, val) < 1) continue;
 #endif
+        // (S23 b6, as BOTWRecompAndroid #187: a file saved with Windows line ends kept a '\r' at the end of each value -
+        // "30\r" isn't "30", and a key with nothing after it kept "\r" as its name's end)
+        val[strcspn(val, "\r\n")] = 0;
+        key[strcspn(key, "\r\n")] = 0;
         if (!strcmp(key, "aspect")) g_settings.aspect = !strcmp(val, "original") ? ASPECT_ORIGINAL : ASPECT_UNLOCKED;
         else if (!strcmp(key, "fullscreen")) g_settings.fullscreen = atoi(val) != 0;
         else if (!strcmp(key, "volume")) g_settings.volume = (float)atof(val);

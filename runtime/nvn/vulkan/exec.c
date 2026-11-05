@@ -6713,23 +6713,34 @@ static void known_note_pipe(const PipeKey *k) {
 }
 
 // (vk_pipeline_cache_save, any thread) the list to disk when it grew
+// (S23 b6) The counts taken under kn_lock, the file written without it: the render thread takes kn_lock for every new
+// program and pipeline (known_note_*), and a list of some MB written under it held that thread while the game was in a
+// new area - when the list grows and the 30 s save comes. The list only grows at its end, each entry written before its
+// count goes up, so the entries under the counts taken don't change. kn_save_lock: one save at a time.
+static pthread_mutex_t kn_save_lock = PTHREAD_MUTEX_INITIALIZER;
 void vk_known_save(void) {
     if (kn_on <= 0 || !kn_prog) return;
+    pthread_mutex_lock(&kn_save_lock);
     pthread_mutex_lock(&kn_lock);
-    if (kn_nprog == kn_saved_prog && kn_npipe == kn_saved_pipe) { pthread_mutex_unlock(&kn_lock); return; }
-    uint32_t hdr[4] = {KNOWN_MAGIC, (uint32_t)(sizeof(KnownProg) | sizeof(KnownPipe) << 16), kn_nprog, kn_npipe};
+    uint32_t np = kn_nprog, nq = kn_npipe;
+    bool same = np == kn_saved_prog && nq == kn_saved_pipe;
+    pthread_mutex_unlock(&kn_lock);
+    if (same) { pthread_mutex_unlock(&kn_save_lock); return; }
+    uint32_t hdr[4] = {KNOWN_MAGIC, (uint32_t)(sizeof(KnownProg) | sizeof(KnownPipe) << 16), np, nq};
     char stamp[128];
     kn_stamp(stamp);
     mkdir("cache", 0755);
     FILE *f = fopen("cache/known_pipelines.bin.tmp", "wb");
     bool ok = f && fwrite(hdr, sizeof hdr, 1, f) == 1 && fwrite(stamp, sizeof stamp, 1, f) == 1 &&
-              fwrite(kn_prog, sizeof *kn_prog, kn_nprog, f) == kn_nprog && fwrite(kn_pipe, sizeof *kn_pipe, kn_npipe, f) == kn_npipe;
+              fwrite(kn_prog, sizeof *kn_prog, np, f) == np && fwrite(kn_pipe, sizeof *kn_pipe, nq, f) == nq;
     if (f && fclose(f) != 0) ok = false;
     if (ok && rename("cache/known_pipelines.bin.tmp", "cache/known_pipelines.bin") == 0) {
-        kn_saved_prog = kn_nprog, kn_saved_pipe = kn_npipe;
-        LOG("[prewarm] %u programs and %u pipelines saved\n", kn_nprog, kn_npipe);
+        pthread_mutex_lock(&kn_lock);
+        kn_saved_prog = np, kn_saved_pipe = nq;
+        pthread_mutex_unlock(&kn_lock);
+        LOG("[prewarm] %u programs and %u pipelines saved\n", np, nq);
     } else remove("cache/known_pipelines.bin.tmp");
-    pthread_mutex_unlock(&kn_lock);
+    pthread_mutex_unlock(&kn_save_lock);
 }
 
 // The game's threads set a program's shaders (nvn/objects.c): queued for the render thread

@@ -1426,6 +1426,10 @@ static void svc_impl(Cpu *c, uint32_t imm, uint64_t pc) {
     case 0x2C:  // MapPhysicalMemory(addr, size): Horizon maps only the unmapped pages and preserves already-mapped pages
                 // (credit: valentderah/totk-pc-recomp runtime/memory.c - TotK's heaps grow by re-mapping ranges they partly
                 // own; UnmapPhysicalMemory already discards unmapped pages).
+        // (S23 b6: only inside the guest window, as MapSharedMemory - the range goes to the GPU's map and, unmapped, to
+        // plat_discard, which zeroes it: outside the window that would be the app's own memory)
+        if (!x[1]) { x[0] = R_OK; break; }  // (nothing to map: as before, no error)
+        if (!guest_range_ok(x[0], x[1])) { x[0] = R_INVALID_ADDRESS; break; }
         pthread_mutex_lock(&g_alias_map_lock);
 #ifdef __ANDROID__
         { extern void vk_vamm_before_map(uint64_t addr, uint64_t size); vk_vamm_before_map(x[0], x[1]); }
@@ -1435,6 +1439,8 @@ static void svc_impl(Cpu *c, uint32_t imm, uint64_t pc) {
         x[0] = R_OK;
         break;
     case 0x2D:  // UnmapPhysicalMemory(addr, size): any range of what was mapped, its memory given back
+        if (!x[1]) { x[0] = R_OK; break; }  // (nothing to map: as before, no error)
+        if (!guest_range_ok(x[0], x[1])) { x[0] = R_INVALID_ADDRESS; break; }
         pthread_mutex_lock(&g_alias_map_lock);
         region_remove_physical(x[0], x[1]);
         plat_discard(x[0], x[1]);
