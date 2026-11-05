@@ -97,8 +97,9 @@ baixar a resolução ajuda pouco. Na mesma partida de 30 minutos, o sistema baix
 
 ## Problemas conhecidos
 
-- **b5 sem teste jogando:** a correção dos cacos do controle de temperatura foi compilada e conferida, mas ainda não
-  foi jogada. Se aparecerem cacos com ele ligado, desligue e avise.
+- **Versão para baixar: b4**, a testada jogando. Nela, deixe o controle de temperatura desligado (o padrão): ligado, ele
+  causa cacos nas bordas e o sol estourado. A correção disso e a sensibilidade até 800% (b5) já estão no código deste
+  ramo, mas a b5 só vai para a aba Releases depois de testada.
 - **Quedas para 17 a 24 FPS em áreas abertas:** o processador não dá conta de tantos desenhos, e o calor piora.
   O próximo passo é medir com o perfilador onde a linha de desenho gasta o tempo.
 - **Memória:** num celular de 12 GB o jogo chegou a 9,2 GB de memória ocupada e encheu a memória de troca na primeira

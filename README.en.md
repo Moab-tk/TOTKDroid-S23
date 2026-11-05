@@ -96,8 +96,9 @@ lowering the resolution helps little. In the same 30-minute session the system l
 
 ## Known problems
 
-- **b5 not tested by playing:** the fix for the temperature control's shards was built and checked, but not played
-  yet. If shards show with it on, turn it off and report it.
+- **Version to download: b4**, the one tested by playing. In it, keep the temperature control off (the default): when
+  on, it causes shards on the edges and a blown-out sun. The fix for that and the 800% sensitivity (b5) are already in
+  this branch's code, but b5 only goes to the Releases tab after it's tested.
 - **Drops to 17-24 FPS in open areas:** the processor can't keep up with so many draws, and heat makes it worse. The
   next step is profiling where the render thread spends its time.
 - **Memory:** on a 12 GB phone the game reached 9.2 GB in use and filled the swap in the first session. Phones with less

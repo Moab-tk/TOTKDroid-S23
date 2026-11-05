@@ -68,7 +68,7 @@ O motor é o mesmo do BOTWRecompAndroid. Muito do que está aqui veio da versão
   jeito antigo.
 - Sensibilidade do arrasto da câmera até 800% (era 300%), com uma dica: acima de uns 400% o direcional virtual já fica
   todo inclinado, e a câmera não gira mais rápido que o máximo do próprio jogo.
-- **Não foi testada jogando** antes de publicar.
+- **Ainda não foi testada jogando.** Por isso a versão na aba Releases é a b4; a b5 vai para lá depois do teste.
 
 ## O que não foi modificado
 
