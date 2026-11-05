@@ -1,6 +1,6 @@
 # TOTKDroid
 
-[English](README.md) | **Português**
+[English](README-ORIGINAL.md) | **Português**
 
 Um port nativo de *The Legend of Zelda: Tears of the Kingdom* (Nintendo Switch, versão **1.4.3**) para Android, em
 beta. **Não é emulação**: o próprio código ARM64 do jogo roda direto na CPU do seu celular, o sistema do

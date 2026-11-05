@@ -1,121 +1,133 @@
-# TOTKDroid
+# TOTK S23
 
-**English** | [Português](README.pt-BR.md)
+**Português** | [English](README.en.md)
 
-A native port of *The Legend of Zelda: Tears of the Kingdom* (Nintendo Switch, version **1.4.3**) for Android, in
-beta. This is **not emulation**: the game's own ARM64 code runs directly on your phone's CPU, the Switch's system
-is replaced by the runtime, and its graphics (NVN) are translated to Vulkan.
-
-It is built on the engine of **[LAS Recomp](https://github.com/peiikai/LASRecomp)** by peiikai (a recompilation of
-*Link's Awakening*), its Android port **[LASRecompAndroid](https://github.com/mamcjr/LASRecompAndroid)** and
-**[BOTWRecompAndroid](https://github.com/mamcjr/BOTWRecompAndroid)**, which this repository was forked from.
-
-Formerly **TOTKRecompAndroid**: renamed once the game's code ran natively and the recompiled build left the app
-(2026-10-30). The old repository address redirects here; the app keeps its Android id (`com.totkrecompandroid`), so
-it updates over an installed copy with its saves.
-
-> [!WARNING]
-> **Beta.** On the phone (with the Turnip driver) a new game or a save plays through the prologue, the cave and the
-> Great Sky Island; most of the map has not been played yet. With Video > Frame rate 60, a cool POCO F7 Ultra holds 60
-> fps in the prologue and 54-57 in the island's woods; over long sessions its heat brings that down to ~45. The plan
-> and the state of each phase are in [docs/TOTK-PORT.md](docs/TOTK-PORT.md) (in Portuguese).
-> Releases: [Releases](https://github.com/mamcjr/TOTKDroid/releases).
-
-## Supported platform
-
-Android only (arm64, Vulkan). Windows, Linux or macOS may be used as development hosts with the Android SDK/NDK.
-
-## Status
-
-- The app (start screen, settings, touch controls, controllers, mods, Vulkan driver choice) comes from
-  BOTWRecompAndroid and builds.
-- 1.4.3 runs on Nintendo SDK 20.5.22, the line of BOTW 1.8.2's 20.5.6 (NVN 55): what the engine learned from BOTW 1.8.2
-  applies. The game's patches and much of what is known about it come from
-  [MacNativeGames](https://github.com/ly05010419/MacNativeGames), which runs this very build natively on Macs and iPhones.
-- The game's code runs natively on the phone's CPU, so setting the game up only copies its files. The static
-  recompilation (228,238 functions from `main` and 40,516 from the SDK, in a 224 MB `totkgame.so`) is kept for
-  development (`LARECOMP_NATIVE=0`): walking in the cave it swung the frame time (sd 7.4 ms against 0.6 natively) and
-  took hours to build on the phone, so the app no longer ships its builder.
-- On the phone (POCO F7 Ultra, the Turnip driver): the title screen, a new game and saves; the prologue, the cave
-  (its walls and the cutscene backgrounds lit, as on the Switch) and the Great Sky Island, with the HUD, subtitles and
-  voices. Water, the sea of clouds, and the grass and lighting (no more black squares) match the Switch. The world
-  steps by real time, so frames above 16.7 ms never slow the game down. Character voices, music and ambience reach the
-  mix. With Qualcomm's own driver it plays too, more slowly.
-- Frame rate: Video > Frame rate has 30, Auto (prefers 60, cutscenes held at 30) and 60. The game's own dynamic
-  resolution is off; the scene is 1600x896, scaled to the output (FSR 1, GSR, SMAA / FXAA).
-- Video > Aspect ratio > Unlocked: the world and the menus fill a wide screen (the HUD stays in the middle 16:9).
-- Not done yet: most of the map, sustained 60 fps on a hot phone, the HUD at the screen's edges in wide mode.
+Modificação **não oficial** do [TOTKDroid](https://github.com/mamcjr/TOTKDroid), ajustada para o **Samsung Galaxy S23
+Ultra** (Snapdragon 8 Gen 2, Adreno 740).
 
 > [!IMPORTANT]
-> Like LAS Recomp, this project is made almost entirely with AI (Claude, by Anthropic, through Claude Code), directed,
-> tested and reviewed by a human.
+> **O projeto original é de [mamcjr](https://github.com/mamcjr), criador do
+> [TOTKDroid](https://github.com/mamcjr/TOTKDroid), a partir do LAS Recomp de [peiikai](https://github.com/peiikai).
+> Todo o crédito do projeto é deles.**
+>
+> Esta versão é uma modificação pessoal feita por outra pessoa, com ajuda de IA. mamcjr não participou destas
+> mudanças, não as testou e não responde por elas.
+
+> [!CAUTION]
+> **Problema nesta versão? Abra uma [issue aqui](https://github.com/Moab-tk/TOTKDroid-S23/issues). Nunca leve estas
+> reclamações ao projeto original.** Um erro nesta versão pode ter sido criado por estas modificações e pode não existir
+> no original. Ela pode funcionar bem no celular de quem testou e funcionar mal no seu.
 
 > [!NOTE]
-> **No game files are included.** You need your own legally obtained dump of *Tears of the Kingdom* with the 1.4.3
-> update applied (`exefs` and the `romfs`). Instructions on how to obtain it will not be provided.
+> Não leve nada a sério. Se não der certo no seu celular, é só deixar para lá e usar a versão que achar melhor.
 
-## Building (developers)
+> [!WARNING]
+> **O celular dos testes é modificado.** É um S23 Ultra de 12 GB, com overclock, com o limitador térmico do sistema
+> desativado por ferramentas de terceiros, com outras modificações e com cooler. Nenhum número desta página vale como
+> promessa para um celular comum.
 
-With the Android SDK / NDK and your dump in `Dump/0100F2C0115B6000/` (`exefs/` and `romfs/`, or the RomFS image
-`romfs.bin`; the folder is ignored by git), with Python and the `lz4`, `capstone` and `unicorn` packages
-(`tools/nsp_extract.py` unpacks NSPs and their title keys for hactoolnet):
+O texto original do projeto, com todos os detalhes técnicos, está em [README-ORIGINAL.pt-BR.md](README-ORIGINAL.pt-BR.md)
+(e em inglês, [README-ORIGINAL.md](README-ORIGINAL.md)). A lista do que foi modificado está em
+[MUDANCAS-S23.md](MUDANCAS-S23.md).
 
-```bash
-cd tools && python totk_dump.py                              # check the dump (modules, version, romfs)
-cd android/totkrecompandroid && ./gradlew assembleDebug      # the app
-ROMFS_HOST=1 android/push_game.sh Dump/0100F2C0115B6000      # the game files onto the phone
-# optional, development only - the recompiled game code (run it with LARECOMP_NATIVE=0):
-# android/build_gamelib.sh Dump/0100F2C0115B6000/exefs       # ~20 min on a PC, then push_game.sh again
-android/run_boot.sh 120                                      # start the game, log to android/out/boot.log
-```
+## Sem arquivos do jogo
 
-## Support the project
+**Nenhum arquivo do jogo vem incluído.** Você precisa do seu próprio dump, obtido legalmente, de *Tears of the Kingdom*
+com a atualização **1.4.3** aplicada (`exefs` e `romfs`). Não serão dadas instruções de como obtê-lo.
 
-TOTKDroid is a free, independent project. If you enjoy it and would like to support its development, you can sponsor
-me on GitHub. Your support helps me dedicate time to fixing bugs, improving performance and compatibility, and working
-on future releases. Sponsorship is entirely optional: it does not unlock features or guarantee specific fixes. Bug
-reports, device tests, and contributions are also greatly appreciated.
+## O que esta versão tem de diferente
 
-[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-on%20GitHub-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/mamcjr)
+- **Compilada para o processador do S23**, sem as instruções que ele não tem.
+- **Instala ao lado do original:** o pacote é outro (`com.totkdroid.s23`), então uma versão não substitui a outra.
+- **Baseada na versão 0.2.1 do original**, a mais nova até agora.
+- **Trazido da versão S23 do BOTW** ([BOTWRecompAndroid-S23](https://github.com/Moab-tk/BOTWRecompAndroid-S23)), que
+  usa o mesmo motor:
+  - quadros regulares a 30 FPS, com a tela em 60 Hz e cada quadro seguindo o ritmo real dela;
+  - orçamento de 30 FPS avisado ao Android, para ele não baixar o processador além da conta;
+  - shaders: quem espera faz a tarefa, tabelas maiores e montagem antecipada dos pipelines já vistos;
+  - cinco drivers Turnip dentro do app, configurações recomendadas com um toque e 8 blocos de configurações salvas;
+  - interface maior, em cartões, com textos em português;
+  - revisão do código: esperas no relógio certo, configurações gravadas com segurança, conferências no kernel e na
+    linha de desenho.
+- **Controle de temperatura (opcional, desligado por padrão):** reduz a cena por etapas antes de o sistema cortar a
+  GPU. Na b4 ele fazia cacos nas bordas e o sol estourado; a b5 corrige o motivo (veja em
+  [MUDANCAS-S23.md](MUDANCAS-S23.md)).
+- **Sensibilidade do arrasto da câmera até 800%.**
 
-## Credits
+## Instalando
 
-- [peiikai](https://github.com/peiikai) for [LAS Recomp](https://github.com/peiikai/LASRecomp), the recompiler and
-  runtime this project starts from (MIT, see [LICENSE](LICENSE)). Its original README is kept in [docs/las/](docs/las/).
-- [MacNativeGames](https://github.com/ly05010419/MacNativeGames) (MIT), which runs Tears of the Kingdom 1.4.3 natively on
-  Macs and iPhones: its verified 1.4.3 patch sites (the fixed resolution, the real-time frame step, the cloth and hair
-  clock, the render size) and its findings (NVN's early-Z flag and block height rounding, depth reads and the D16
-  shadow compare, the visibility counter).
-- [valentderah/totk-pc-recomp](https://github.com/valentderah/totk-pc-recomp) (MIT), a Windows/Vulkan static
-  recompilation of Tears of the Kingdom 1.4.3: its attachment-less render pass sizing and scissor handling (interior
-  ambient light on cave rocks), 16-bit packed NVN format component ordering (`RGBA4`/`RGB5`/`RGB5A1`/`RGB565` and
-  `BGR565`/`BGR5`/`BGR5A1`/`A1BGR5`/`BGRX8`/`BGRA8` for terrain normal and blend maps), `MapPhysicalMemory` preservation
-  of already-mapped pages, and its documented 1.4.3 findings.
-- [LASRecompAndroid](https://github.com/mamcjr/LASRecompAndroid), its Android port, and
-  [BOTWRecompAndroid](https://github.com/mamcjr/BOTWRecompAndroid) (its README in [docs/botw/](docs/botw/)): the app,
-  the phone-side game code build, touch controls, mods, driver compatibility, the Portuguese menus, the Sheikah look and
-  everything the engine learned from BOTW 1.8.2's SDK.
-- PKMSVRecompAndroid (a sibling port of *Pokémon Scarlet*, not published): the version handling for a game with one
-  version, the program id from the NPDM and the 16-byte exclusive pairs in the recompiler.
-- [Revivedx](https://github.com/Revivedx) for [SavageWindRecomp](https://github.com/Revivedx/SavageWindRecomp) (MIT):
-  the SDK 20 kernel fixes, setjmp, NVN 55.
-- [Nycolazs](https://github.com/Nycolazs) for LASRecomp-Android-Plus (MIT): Vulkan driver compatibility.
-- The [zeldaret/botw](https://github.com/zeldaret/botw) decompilation and [open-ead/sead](https://github.com/open-ead/sead),
-  for what is known about the engine TOTK grew from.
-- Upscaling and anti-aliasing: [AMD FidelityFX FSR 1](https://github.com/GPUOpen-Effects/FidelityFX-FSR) (MIT),
-  [Qualcomm Snapdragon GSR](https://github.com/SnapdragonStudios/snapdragon-gsr) (BSD-3-Clause),
-  [SMAA](https://github.com/iryoku/smaa) (MIT).
-- Libraries: [SDL](https://libsdl.org) (zlib), [Dear ImGui](https://github.com/ocornut/imgui) (MIT),
-  [libadrenotools](https://github.com/bylaws/libadrenotools) (BSD-2-Clause), [volk](https://github.com/zeux/volk) (MIT),
-  [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) (MIT),
-  [shaderc](https://github.com/google/shaderc) (Apache 2.0), [FFmpeg](https://ffmpeg.org) (LGPL),
-  [LZ4](https://github.com/lz4/lz4) (BSD-2-Clause), [Capstone](https://www.capstone-engine.org) (BSD-3-Clause),
-  [Unicorn](https://www.unicorn-engine.org) (GPLv2, built from its source by `android/deps/build_unicorn.sh`),
-  [Python](https://www.python.org) (PSF) and [Zig](https://ziglang.org) (MIT) for the phone-side build.
-- [Mesa](https://www.mesa3d.org)'s Turnip driver (MIT), which players load themselves.
-- Fonts: [Baloo 2](https://github.com/EkType/Baloo2) (OFL), DejaVu Sans (Bitstream Vera license). The Android robot
-  is reproduced or modified from work created and shared by Google (CC BY 3.0).
-- Made with [Claude Code](https://claude.com/claude-code) (Anthropic).
+Você precisa de Android 11 ou mais novo, de um celular arm64 com Vulkan e de espaço para os arquivos do jogo.
 
-*The Legend of Zelda* and *Tears of the Kingdom* are trademarks of Nintendo. This project is not affiliated with or
-endorsed by Nintendo.
+1. Baixe o APK na aba **Releases** desta página e instale.
+2. Abra e escolha a pasta com o seu `exefs` e `romfs` da 1.4.3. O jogo roda em código nativo: o app não compila o jogo.
+3. Na tela inicial, abra **Configurações salvas** e toque em **Usar configurações recomendadas**.
+4. Confirme. O app reinicia e o jogo está pronto para jogar.
+
+Atualizando uma versão anterior desta modificação, basta instalar por cima: os saves e as configurações continuam.
+
+## Configurações recomendadas
+
+| Opção | S23 Ultra | S23, S23+ e mais fracos |
+|---|---|---|
+| Limite de quadros | 30 FPS | 30 FPS |
+| Resolução interna | 1x | 75% |
+| Resolução de saída | 1080 linhas | 900 linhas |
+| Ampliação da imagem | FSR 1 | FSR 1 |
+| Suavização | Desligada | Desligada |
+| Código do jogo | Nativo | Nativo |
+| Quadros regulares a 30 FPS | Ligado | Ligado |
+| Controle de temperatura | Desligado | Desligado |
+
+A opção mais leve não foi testada no S23, no S23+ nem em celulares mais fracos.
+
+## Desempenho medido
+
+Números de um único aparelho **modificado**, jogo 1.4.3, código nativo, 30 FPS.
+
+| Medição | Configuração | FPS médio | Observações |
+|---|---|---:|---|
+| b1, parte guiada | GPU limitada pelo sistema | 25,5 | 67% dos quadros no tempo certo |
+| b1, parte guiada | GPU liberada | 26,8 | 75% dos quadros no tempo certo |
+| b4, 30 minutos jogando | 1x, saída 1080, calor desligado | 27,7 | 71% das medições em 27 ou mais; 5% abaixo de 20 |
+| b4, dentro de um santuário | a mesma | 29,8 | quase sem quedas |
+
+Nas áreas abertas e cheias o jogo manda de 4 a 5 mil desenhos por quadro. Ali o limite é o processador, não a GPU:
+baixar a resolução ajuda pouco. Na mesma partida de 30 minutos, o sistema baixou o limite do núcleo mais rápido de
+3.360 para 1.555 MHz pelo calor, e o FPS caiu junto.
+
+## Problemas conhecidos
+
+- **b5 sem teste jogando:** a correção dos cacos do controle de temperatura foi compilada e conferida, mas ainda não
+  foi jogada. Se aparecerem cacos com ele ligado, desligue e avise.
+- **Quedas para 17 a 24 FPS em áreas abertas:** o processador não dá conta de tantos desenhos, e o calor piora.
+  O próximo passo é medir com o perfilador onde a linha de desenho gasta o tempo.
+- **Memória:** num celular de 12 GB o jogo chegou a 9,2 GB de memória ocupada e encheu a memória de troca na primeira
+  sessão. Celulares com menos memória podem fechar o jogo.
+- **Montagem antecipada:** a primeira sessão depois de instalar uma versão nova só anota os pipelines; o ganho aparece
+  da segunda em diante.
+- **Só testada no S23 Ultra.** Não há versão Universal do TOTK por enquanto.
+
+## Opções de teste
+
+Chaves `LARECOMP_*` só funcionam com o arquivo `testes.txt` na pasta do app, que só o `adb` consegue criar. Algumas
+úteis: `LARECOMP_SCALE_SNAP=0` (escala da cena como antes da b5), `LARECOMP_NO_PREWARM=1` (sem montagem antecipada),
+`LARECOMP_LOG_HEAT=1` (registro do calor a cada 30 s).
+
+## Apoie, se quiser
+
+Doação voluntária, sem nenhum benefício, para ajudar com custos como os tokens do Claude. Ela vai para Moab, autor desta
+modificação, e não para mamcjr, peiikai ou a Nintendo. Pix (chave aleatória): `5eb148c4-81dc-47cd-b2cc-b3171d3c06ab`
+
+Para apoiar o projeto original, use o [patrocínio de mamcjr no GitHub](https://github.com/sponsors/mamcjr).
+
+## Compilando
+
+Igual ao original: veja [README-ORIGINAL.pt-BR.md](README-ORIGINAL.pt-BR.md). A chave de assinatura fica fora do
+repositório (`~/.totkrecompandroid/keystore.properties`).
+
+## Créditos
+
+- [mamcjr](https://github.com/mamcjr), pelo [TOTKDroid](https://github.com/mamcjr/TOTKDroid).
+- [peiikai](https://github.com/peiikai), pelo LAS Recomp (licença MIT, em [LICENSE](LICENSE)).
+- Todos os créditos do original continuam valendo: veja [README-ORIGINAL.pt-BR.md](README-ORIGINAL.pt-BR.md#créditos).
+- Drivers Turnip: builds do Mesa feitas por [The412Banner](https://github.com/The412Banner/Banners-Turnip).
