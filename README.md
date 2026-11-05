@@ -43,7 +43,7 @@ com a atualização **1.4.3** aplicada (`exefs` e `romfs`). Não serão dadas in
 - **Trazido da versão S23 do BOTW** ([BOTWRecompAndroid-S23](https://github.com/Moab-tk/BOTWRecompAndroid-S23)), que
   usa o mesmo motor:
   - quadros regulares a 30 FPS, com a tela em 60 Hz (a trava que segura cada quadro no ritmo real da tela só passa a
-    funcionar no TOTK na b6, ainda em teste);
+    funcionar no TOTK a partir da b6);
   - orçamento de 30 FPS avisado ao Android, para ele não baixar o processador além da conta;
   - shaders: quem espera faz a tarefa, tabelas maiores e montagem antecipada dos pipelines já vistos;
   - cinco drivers Turnip dentro do app, configurações recomendadas com um toque e 8 blocos de configurações salvas;
@@ -54,6 +54,11 @@ com a atualização **1.4.3** aplicada (`exefs` e `romfs`). Não serão dadas in
   GPU. Na b4 ele fazia cacos nas bordas e o sol estourado; a b5 corrige o motivo, e a b6 deixa escolher se ele decide
   pelo aviso do Android ou pela temperatura do chip (veja em [MUDANCAS-S23.md](MUDANCAS-S23.md)).
 - **Sensibilidade do arrasto da câmera até 800%.**
+- **Movimento pelos analógicos (novo):** para os quebra-cabeças de movimento dos santuários. Em Sistema >
+  Controles: o analógico esquerdo inclina o controle e o direito gira; leve no meio do curso, inteiro só na borda.
+  Com "Botão rápido na tela", um botão que dá para arrastar liga e desliga sem abrir o menu. Nos testes do autor,
+  passar esses santuários foi bem mais fácil assim do que inclinando o celular, mas é só uma opção a mais: jogue do
+  jeito que achar melhor.
 
 ## Instalando
 
@@ -98,9 +103,8 @@ baixar a resolução ajuda pouco. Na mesma partida de 30 minutos, o sistema baix
 
 ## Problemas conhecidos
 
-- **Versão para baixar: b4**, a testada jogando. Nela, deixe o controle de temperatura desligado (o padrão): ligado, ele
-  causa cacos nas bordas e o sol estourado. A correção disso e a sensibilidade até 800% (b5) já estão no código deste
-  ramo, mas a b5 só vai para a aba Releases depois de testada.
+- **Versão para baixar: b6**, jogada no S23 Ultra sem problemas. Ela traz a correção dos cacos do controle de
+  temperatura (b5, que não foi publicada sozinha). A grade dos quadros regulares a 30 FPS ainda não foi medida.
 - **Quedas para 17 a 24 FPS em áreas abertas:** o processador não dá conta de tantos desenhos, e o calor piora.
   O próximo passo é medir com o perfilador onde a linha de desenho gasta o tempo.
 - **Memória:** num celular de 12 GB o jogo chegou a 9,2 GB de memória ocupada e encheu a memória de troca na primeira

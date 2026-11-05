@@ -68,7 +68,7 @@ O motor é o mesmo do BOTWRecompAndroid. Muito do que está aqui veio da versão
   jeito antigo.
 - Sensibilidade do arrasto da câmera até 800% (era 300%), com uma dica: acima de uns 400% o direcional virtual já fica
   todo inclinado, e a câmera não gira mais rápido que o máximo do próprio jogo.
-- **Ainda não foi testada jogando.** Por isso a versão na aba Releases é a b4; a b5 vai para lá depois do teste.
+- Não foi publicada sozinha: tudo o que ela tem entrou na b6.
 
 ### b6: consertos da análise do código e auditoria das configurações (05/11/2026)
 
@@ -99,7 +99,9 @@ de todas as 45 configurações: se cada uma chega ao jogo e quando passa a valer
   (ele acende quando está ligado). Segurando e arrastando, ele vai para qualquer lugar da tela, como o painel de
   desempenho, e fica onde for deixado. O toque nele não vai para o jogo.
 - Medição nova no registro: `[prog]`, uma vez por minuto, quantos programas de shader o jogo descartou e quanto esperou.
-- **Não foi testada jogando.**
+- Depois do primeiro teste (no BOTW), os analógicos ficaram leves no meio do curso: na metade, cerca de um quarto do
+  movimento; inteiro só na borda.
+- **Jogada no S23 Ultra (05/11/2026):** tudo rodando bem, texturas boas. A grade dos quadros ainda não foi medida.
 
 ## O que não foi modificado
 

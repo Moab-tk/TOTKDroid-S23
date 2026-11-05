@@ -43,7 +43,7 @@ applied (`exefs` and `romfs`). No instructions on how to get it will be given.
 - **Brought over from the S23 version of BOTW** ([BOTWRecompAndroid-S23](https://github.com/Moab-tk/BOTWRecompAndroid-S23)),
   which uses the same engine:
   - steady 30 FPS frames, with the screen at 60 Hz (the lock that holds each frame to the screen's real rhythm only works
-    in TOTK from b6 on, still being tested);
+    in TOTK from b6 on);
   - a 30 FPS budget told to Android, so it doesn't lower the processor too far;
   - shaders: whoever waits does the job, larger tables and pipelines already seen built ahead;
   - five Turnip drivers inside the app, one-tap recommended settings and 8 saved settings blocks;
@@ -53,6 +53,11 @@ applied (`exefs` and `romfs`). No instructions on how to get it will be given.
   caused shards on the edges and a blown-out sun; b5 fixes the reason, and b6 lets it decide by Android's warning or by
   the chip's temperature (see [MUDANCAS-S23.md](MUDANCAS-S23.md)).
 - **Camera drag sensitivity up to 800%.**
+- **Motion with the sticks (new):** for the shrines' motion puzzles. In System > Controls: the left stick tilts the
+  controller and the right one turns it; gentle through most of the travel, the full motion only at the edge. With
+  "Quick button on the screen", a button you can drag turns it on and off without opening the menu. In the author's
+  tests, those shrines were much easier this way than tilting the phone, but it's just one more option: play the way
+  you like best.
 
 ## Installing
 
@@ -98,9 +103,8 @@ lowering the resolution helps little. In the same 30-minute session the system l
 
 ## Known problems
 
-- **Version to download: b4**, the one tested by playing. In it, keep the temperature control off (the default): when
-  on, it causes shards on the edges and a blown-out sun. The fix for that and the 800% sensitivity (b5) are already in
-  this branch's code, but b5 only goes to the Releases tab after it's tested.
+- **Version to download: b6**, played on the S23 Ultra with no problems. It brings the fix for the temperature
+  control's shards (b5, which wasn't published on its own). The steady 30 FPS frame grid wasn't measured yet.
 - **Drops to 17-24 FPS in open areas:** the processor can't keep up with so many draws, and heat makes it worse. The
   next step is profiling where the render thread spends its time.
 - **Memory:** on a 12 GB phone the game reached 9.2 GB in use and filled the swap in the first session. Phones with less
