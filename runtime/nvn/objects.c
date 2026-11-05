@@ -1545,7 +1545,23 @@ NVN(nvnProgramFinalize) {
 #ifdef __ANDROID__
     // (S23) a command list still queued for the render thread reads this program's stages when it binds it: freed
     // under it, a use after free - the queue first, as the texture and sampler pools do (vulkan/async.c)
-    if (vk_async_on()) vk_async_drain();
+    if (vk_async_on()) {
+        // (S23 b6, measuring) how often the game frees programs and how long the queue's wait holds its thread: once
+        // a minute, when it did. If they come often in play, the wait should be only for the last list that used it.
+        static uint64_t since, waited, worst;
+        static unsigned n;
+        uint64_t t0 = plat_now_ns();
+        vk_async_drain();
+        uint64_t dt = plat_now_ns() - t0;
+        n++, waited += dt;
+        if (dt > worst) worst = dt;
+        if (!since) since = t0;
+        if (t0 - since >= 60000000000ull) {
+            LOG("[prog] %u programs freed in %.0f s: the game waited %.1f ms for the render thread (worst %.1f)\n", n,
+                (t0 - since) / 1e9, waited / 1e6, worst / 1e6);
+            since = t0, n = 0, waited = worst = 0;
+        }
+    }
 #endif
     free(HOST(NvnProgram, A(0)));
     SET_HOST(A(0), 0);
@@ -1971,6 +1987,18 @@ NVN(nvnQueuePresentTexture) {
             g_present_vsync_wait_ns = plat_now_ns() - t0;
             g_blocked_ns += plat_now_ns() - t0;
             last_vs = __atomic_load_n(&g_vsync_count, __ATOMIC_RELAXED);
+#ifdef __ANDROID__
+            // (S23 b6) Steady frames at 30 FPS: this frame's time on a grid, for vulkan/device.c present_lock - before,
+            // only BOTW's branch above gave one, and in TOTK the setting only asked Android for 60 Hz (no "[present] lock"
+            // line in any TOTK log). The grid is the emulated vsync that just let the frame go (hle/vi.c's timer, on the
+            // CPU's clock): present_lock then holds the frames to the panel's own refreshes, which that timer slides
+            // over. Only there - Frame rate 30, the setting on - so with it off every frame goes out as before.
+            // LARECOMP_TOTK_GRID=0: no grid (as b5).
+            static int grid_on = -1;
+            if (grid_on < 0) grid_on = !getenv("LARECOMP_TOTK_GRID") || atoi(getenv("LARECOMP_TOTK_GRID"));
+            if (grid_on && n >= 2 && g_settings.panel_lock && g_settings.fps_mode == 1)
+                __atomic_store_n(&g_present_grid_ns, plat_now_ns(), __ATOMIC_RELAXED);
+#endif
         }
     }
     frame_step_update(plat_now_ns());  // (TOTK 1.4.3's world step: the time between presents)
