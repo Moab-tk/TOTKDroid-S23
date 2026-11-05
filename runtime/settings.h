@@ -53,6 +53,7 @@ typedef struct {
     int heat_mode;        // (b6) how it decides: 0 Android's heat warning, 1 the chip's temperature (heat_limit)
     int heat_limit;       // (b6) heat_mode 1: the SoC's degrees C where it starts, 75..95 (85 by default)
     bool stick_motion_button;  // the quick button of Motion with the sticks, at the top of the screen (ui/menu.mm)
+    float stick_btn_pos[2];    // its top left, a share of the screen, dragged there with a finger (negative: the corner)
     int shader_workers;   // threads building shaders, 0 automatic (vulkan/exec.c)
     int force_aniso;      // 0 the game's, 1-5: 1x, 2x, 4x, 8x, 16x (vulkan/textures.c)
     int turnip_mode;      // TU_DEBUG: 0 none, 1 gmem, 2 sysmem, 3 noubwc; read when the app starts (vulkan/device.c)

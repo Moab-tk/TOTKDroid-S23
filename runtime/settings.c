@@ -34,6 +34,7 @@ Settings g_settings = {
     .show_fps = true,  // (the performance overlay, ui/perf_overlay.mm: on until turned off in the menu)
     .touch_controls = true,
     .overlay_pos = {-1, -1},
+    .stick_btn_pos = {-1, -1},
     .touch_pos = {{-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1},
                   {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}},
     .touch_scale = 1.0f,
@@ -266,6 +267,7 @@ void settings_load(void) {
         else if (!strcmp(key, "heat_mode")) g_settings.heat_mode = atoi(val) == 1;
         else if (!strcmp(key, "heat_limit")) g_settings.heat_limit = atoi(val) < 75 ? 75 : atoi(val) > 95 ? 95 : atoi(val);
         else if (!strcmp(key, "stick_motion_button")) g_settings.stick_motion_button = atoi(val) != 0;
+        else if (!strcmp(key, "stick_btn_pos")) sscanf(val, "%f,%f", &g_settings.stick_btn_pos[0], &g_settings.stick_btn_pos[1]);
         else if (!strcmp(key, "shader_workers")) g_settings.shader_workers = atoi(val) < 0 ? 0 : atoi(val) > 6 ? 6 : atoi(val);
         else if (!strcmp(key, "force_aniso")) g_settings.force_aniso = atoi(val) < 0 ? 0 : atoi(val) > 5 ? 5 : atoi(val);
         else if (!strcmp(key, "turnip_mode")) g_settings.turnip_mode = atoi(val) < 0 ? 0 : atoi(val) > 3 ? 3 : atoi(val);
@@ -404,6 +406,7 @@ static void settings_write(FILE *f) {
             g_settings.present_fifo, g_settings.panel_lock, g_settings.heat_control, g_settings.shader_workers, g_settings.force_aniso, g_settings.turnip_mode);
     fprintf(f, "heat_mode = %d\nheat_limit = %d\n", g_settings.heat_mode, g_settings.heat_limit);
     fprintf(f, "stick_motion_button = %d\n", g_settings.stick_motion_button);
+    fprintf(f, "stick_btn_pos = %.4f,%.4f\n", g_settings.stick_btn_pos[0], g_settings.stick_btn_pos[1]);
     static const char *const tri[] = {"auto", "0", "1"};  // (-1 / 0 / 1)
 #define TRI(v) tri[(v) < 0 ? 0 : (v) ? 2 : 1]
     fprintf(f, "gpu_heap = %s\ninplace_reads = %s\nturnip_lrz = %s\nlog_file = %d\ngpu_model = %s\n", TRI(g_settings.gpu_heap),

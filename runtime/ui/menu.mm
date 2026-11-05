@@ -759,8 +759,9 @@ static void tab_about(void) {
          "don't move the player or the camera, and the phone's sensor is left out. Turn it off after the puzzle; it's "
          "off again whenever the app starts.");
     if (toggle("Quick button on the screen", &g_settings.stick_motion_button)) settings_save();
-    hint("A small button at the top of the screen turns Motion with the sticks on and off with one tap, without "
-         "opening this menu. It stays there until you turn this off.");
+    hint("A small button on the screen, at the top left at first: a tap turns Motion with the sticks on or off without "
+         "opening this menu (it lights up while on). Hold it and drag it to put it anywhere on the screen, as the "
+         "performance overlay; it stays where you leave it.");
     ImGui::Spacing();
     controls_bindings_draw(ImGui::GetFontSize() / 34);
     ImGui::Spacing();
@@ -1386,22 +1387,27 @@ void menu_render(void *cmd, uint32_t target_w, uint32_t target_h) {
 #ifdef __ANDROID__
     {   // (on top of the game, under the menu: hidden while it is open)
         touch_controls_draw(io.DisplaySize, g_font_big ? g_font_big : ImGui::GetFont());
-        extern float g_stick_btn_rect[4];  // (ui/touch_controls.mm: a tap there turns it on and off)
+        extern float g_stick_btn_rect[6];  // (ui/touch_controls.mm: a tap there turns it on and off)
         g_stick_btn_rect[2] = 0;
         if ((g_stick_motion || g_settings.stick_motion_button) && !open) {
-            // (S23) the sticks as the motion controller: said at the top of the screen while on, and with the quick
-            // button a pill to tap there - lit while on
+            // (S23) the sticks as the motion controller: said on the screen while on, and with the quick button a pill
+            // to tap - lit while on - at the top left, or wherever a finger dragged it
             bool on = g_stick_motion;
             const char *t = tr(on ? "Motion with the sticks: on" : "Motion with the sticks: off");
             ImDrawList *dl = ImGui::GetForegroundDrawList();
             float fs = ImGui::GetFontSize() * 0.8f, px = 22 * scale, py = 12 * scale;
-            ImVec2 sz = ImGui::GetFont()->CalcTextSizeA(fs, FLT_MAX, 0, t), p((io.DisplaySize.x - sz.x) * 0.5f, 18 * scale);
-            ImVec2 a(p.x - px, p.y - py), b(p.x + sz.x + px, p.y + sz.y + py);
+            ImVec2 sz = ImGui::GetFont()->CalcTextSizeA(fs, FLT_MAX, 0, t);
+            float w = sz.x + 2 * px, h = sz.y + 2 * py, m = 16 * scale;
+            const float *pos = g_settings.stick_btn_pos;  // (dragged there: ui/touch_controls.mm stick_button)
+            ImVec2 a = pos[0] >= 0 && pos[1] >= 0 ? ImVec2(pos[0] * io.DisplaySize.x, pos[1] * io.DisplaySize.y) : ImVec2(m, m);
+            a.x = fmaxf(0, fminf(a.x, io.DisplaySize.x - w)), a.y = fmaxf(0, fminf(a.y, io.DisplaySize.y - h));
+            ImVec2 b(a.x + w, a.y + h), p(a.x + px, a.y + py);
             dl->AddRectFilled(a, b, on ? IM_COL32(18, 110, 80, 210) : IM_COL32(0, 0, 0, 130), (b.y - a.y) * 0.5f);
             if (on) dl->AddRect(a, b, IM_COL32(120, 230, 190, 255), (b.y - a.y) * 0.5f, 0, 2 * scale);
             dl->AddText(ImGui::GetFont(), fs, p, on ? IM_COL32(255, 255, 255, 255) : IM_COL32(200, 205, 200, 230), t);
-            if (g_settings.stick_motion_button)  // (a little taller than drawn: an easy target for a finger)
-                g_stick_btn_rect[0] = a.x, g_stick_btn_rect[1] = 0, g_stick_btn_rect[2] = b.x - a.x, g_stick_btn_rect[3] = b.y + py;
+            if (g_settings.stick_motion_button)  // (a little bigger than drawn: an easy target for a finger)
+                g_stick_btn_rect[0] = a.x - py, g_stick_btn_rect[1] = a.y - py, g_stick_btn_rect[2] = w + 2 * py,
+                g_stick_btn_rect[3] = h + 2 * py, g_stick_btn_rect[4] = a.x, g_stick_btn_rect[5] = a.y;
         }
     }
 #endif

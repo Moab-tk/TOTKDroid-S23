@@ -278,20 +278,37 @@ static bool overlay_drag(const SDL_Event *e, float x, float y) {  // true: the f
 }
 
 // (S23) The quick button of Motion with the sticks (ui/menu.mm draws it and says where: pixels x, y, w, h; w 0 none)
-float g_stick_btn_rect[4];
+float g_stick_btn_rect[6];  // (and 4, 5: the pill's own top left, without the finger's margin)
 static SDL_FingerID stick_btn_finger;
-static bool stick_btn_held;
+static bool stick_btn_held, stick_btn_moved;
+static float stick_btn_sx, stick_btn_sy, stick_btn_dx, stick_btn_dy;  // (where the finger landed; the pill's corner from it)
+// A tap turns it on or off (when the finger lifts); held and moved more than a little, the button goes with the finger
+// and stays there (g_settings.stick_btn_pos), as the performance overlay - and then the lift turns nothing.
 static bool stick_button(const SDL_Event *e, float x, float y) {  // true: the finger is the button's
+    const float *r = g_stick_btn_rect;
     if (e->type == SDL_EVENT_FINGER_DOWN) {
-        const float *r = g_stick_btn_rect;
         if (stick_btn_held || r[2] <= 0 || x < r[0] || x > r[0] + r[2] || y < r[1] || y > r[1] + r[3]) return false;
-        extern volatile bool g_stick_motion;
-        g_stick_motion = !g_stick_motion;
-        stick_btn_held = true, stick_btn_finger = e->tfinger.fingerID;
+        stick_btn_held = true, stick_btn_moved = false, stick_btn_finger = e->tfinger.fingerID;
+        stick_btn_sx = x, stick_btn_sy = y;
+        stick_btn_dx = r[4] - x, stick_btn_dy = r[5] - y;  // (the pill's own corner: menu.mm)
         return true;
     }
     if (!stick_btn_held || e->tfinger.fingerID != stick_btn_finger) return false;
-    if (e->type == SDL_EVENT_FINGER_UP || e->type == SDL_EVENT_FINGER_CANCELED) stick_btn_held = false;
+    float slop = disp_h * 0.02f;  // (~2% of the screen: a tap's own wobble)
+    if (!stick_btn_moved && (fabsf(x - stick_btn_sx) > slop || fabsf(y - stick_btn_sy) > slop)) stick_btn_moved = true;
+    if (stick_btn_moved) {
+        float nx = (x + stick_btn_dx) / disp_w, ny = (y + stick_btn_dy) / disp_h;
+        g_settings.stick_btn_pos[0] = nx < 0 ? 0 : nx > 1 ? 1 : nx;
+        g_settings.stick_btn_pos[1] = ny < 0 ? 0 : ny > 1 ? 1 : ny;
+    }
+    if (e->type == SDL_EVENT_FINGER_UP || e->type == SDL_EVENT_FINGER_CANCELED) {
+        stick_btn_held = false;
+        if (stick_btn_moved) settings_save();
+        else if (e->type == SDL_EVENT_FINGER_UP) {
+            extern volatile bool g_stick_motion;
+            g_stick_motion = !g_stick_motion;
+        }
+    }
     return true;
 }
 
