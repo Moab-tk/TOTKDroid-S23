@@ -758,6 +758,9 @@ static void tab_about(void) {
          "let go. The right stick turns it further and leaves it there, to turn a puzzle upside down. Meanwhile the sticks "
          "don't move the player or the camera, and the phone's sensor is left out. Turn it off after the puzzle; it's "
          "off again whenever the app starts.");
+    if (toggle("Quick button on the screen", &g_settings.stick_motion_button)) settings_save();
+    hint("A small button at the top of the screen turns Motion with the sticks on and off with one tap, without "
+         "opening this menu. It stays there until you turn this off.");
     ImGui::Spacing();
     controls_bindings_draw(ImGui::GetFontSize() / 34);
     ImGui::Spacing();
@@ -1319,7 +1322,7 @@ void menu_render(void *cmd, uint32_t target_w, uint32_t target_h) {
     bool touch = false;
 #endif
     extern volatile bool g_stick_motion;  // (S23: its note at the top of the screen, below)
-    if (!open && !kbd && !g_settings.show_fps && !touch && !g_stick_motion) {
+    if (!open && !kbd && !g_settings.show_fps && !touch && !g_stick_motion && !g_settings.stick_motion_button) {
         if (g_inited) { pthread_mutex_lock(&q_lock); q_events.clear(); pthread_mutex_unlock(&q_lock); }
         return;
     }
@@ -1383,14 +1386,22 @@ void menu_render(void *cmd, uint32_t target_w, uint32_t target_h) {
 #ifdef __ANDROID__
     {   // (on top of the game, under the menu: hidden while it is open)
         touch_controls_draw(io.DisplaySize, g_font_big ? g_font_big : ImGui::GetFont());
-        if (g_stick_motion && !open) {  // (S23) the sticks are the motion controller now: said on the screen
-            const char *t = tr("Motion with the sticks: on");
+        extern float g_stick_btn_rect[4];  // (ui/touch_controls.mm: a tap there turns it on and off)
+        g_stick_btn_rect[2] = 0;
+        if ((g_stick_motion || g_settings.stick_motion_button) && !open) {
+            // (S23) the sticks as the motion controller: said at the top of the screen while on, and with the quick
+            // button a pill to tap there - lit while on
+            bool on = g_stick_motion;
+            const char *t = tr(on ? "Motion with the sticks: on" : "Motion with the sticks: off");
             ImDrawList *dl = ImGui::GetForegroundDrawList();
-            float fs = ImGui::GetFontSize() * 0.8f;
-            ImVec2 sz = ImGui::GetFont()->CalcTextSizeA(fs, FLT_MAX, 0, t), p((io.DisplaySize.x - sz.x) * 0.5f, 14 * scale);
-            dl->AddRectFilled(ImVec2(p.x - 14 * scale, p.y - 6 * scale), ImVec2(p.x + sz.x + 14 * scale, p.y + sz.y + 6 * scale),
-                              IM_COL32(0, 0, 0, 150), 10 * scale);
-            dl->AddText(ImGui::GetFont(), fs, p, IM_COL32(120, 230, 190, 255), t);
+            float fs = ImGui::GetFontSize() * 0.8f, px = 22 * scale, py = 12 * scale;
+            ImVec2 sz = ImGui::GetFont()->CalcTextSizeA(fs, FLT_MAX, 0, t), p((io.DisplaySize.x - sz.x) * 0.5f, 18 * scale);
+            ImVec2 a(p.x - px, p.y - py), b(p.x + sz.x + px, p.y + sz.y + py);
+            dl->AddRectFilled(a, b, on ? IM_COL32(18, 110, 80, 210) : IM_COL32(0, 0, 0, 130), (b.y - a.y) * 0.5f);
+            if (on) dl->AddRect(a, b, IM_COL32(120, 230, 190, 255), (b.y - a.y) * 0.5f, 0, 2 * scale);
+            dl->AddText(ImGui::GetFont(), fs, p, on ? IM_COL32(255, 255, 255, 255) : IM_COL32(200, 205, 200, 230), t);
+            if (g_settings.stick_motion_button)  // (a little taller than drawn: an easy target for a finger)
+                g_stick_btn_rect[0] = a.x, g_stick_btn_rect[1] = 0, g_stick_btn_rect[2] = b.x - a.x, g_stick_btn_rect[3] = b.y + py;
         }
     }
 #endif

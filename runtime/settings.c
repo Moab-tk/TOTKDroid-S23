@@ -207,6 +207,7 @@ void settings_reset_defaults(void) {
     g_settings.heat_control = d->heat_control;
     g_settings.heat_mode = d->heat_mode;
     g_settings.heat_limit = d->heat_limit;
+    g_settings.stick_motion_button = d->stick_motion_button;
     g_settings.shader_workers = d->shader_workers;
     g_settings.force_aniso = d->force_aniso;
     g_settings.turnip_mode = d->turnip_mode;
@@ -264,6 +265,7 @@ void settings_load(void) {
         else if (!strcmp(key, "heat_control")) g_settings.heat_control = atoi(val) != 0;
         else if (!strcmp(key, "heat_mode")) g_settings.heat_mode = atoi(val) == 1;
         else if (!strcmp(key, "heat_limit")) g_settings.heat_limit = atoi(val) < 75 ? 75 : atoi(val) > 95 ? 95 : atoi(val);
+        else if (!strcmp(key, "stick_motion_button")) g_settings.stick_motion_button = atoi(val) != 0;
         else if (!strcmp(key, "shader_workers")) g_settings.shader_workers = atoi(val) < 0 ? 0 : atoi(val) > 6 ? 6 : atoi(val);
         else if (!strcmp(key, "force_aniso")) g_settings.force_aniso = atoi(val) < 0 ? 0 : atoi(val) > 5 ? 5 : atoi(val);
         else if (!strcmp(key, "turnip_mode")) g_settings.turnip_mode = atoi(val) < 0 ? 0 : atoi(val) > 3 ? 3 : atoi(val);
@@ -401,6 +403,7 @@ static void settings_write(FILE *f) {
     fprintf(f, "gpu_turbo = %d\npresent_fifo = %d\npanel_lock = %d\nheat_control = %d\nshader_workers = %d\nforce_aniso = %d\nturnip_mode = %d\n", g_settings.gpu_turbo,
             g_settings.present_fifo, g_settings.panel_lock, g_settings.heat_control, g_settings.shader_workers, g_settings.force_aniso, g_settings.turnip_mode);
     fprintf(f, "heat_mode = %d\nheat_limit = %d\n", g_settings.heat_mode, g_settings.heat_limit);
+    fprintf(f, "stick_motion_button = %d\n", g_settings.stick_motion_button);
     static const char *const tri[] = {"auto", "0", "1"};  // (-1 / 0 / 1)
 #define TRI(v) tri[(v) < 0 ? 0 : (v) ? 2 : 1]
     fprintf(f, "gpu_heap = %s\ninplace_reads = %s\nturnip_lrz = %s\nlog_file = %d\ngpu_model = %s\n", TRI(g_settings.gpu_heap),

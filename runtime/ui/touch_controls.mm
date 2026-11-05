@@ -277,6 +277,24 @@ static bool overlay_drag(const SDL_Event *e, float x, float y) {  // true: the f
     return true;
 }
 
+// (S23) The quick button of Motion with the sticks (ui/menu.mm draws it and says where: pixels x, y, w, h; w 0 none)
+float g_stick_btn_rect[4];
+static SDL_FingerID stick_btn_finger;
+static bool stick_btn_held;
+static bool stick_button(const SDL_Event *e, float x, float y) {  // true: the finger is the button's
+    if (e->type == SDL_EVENT_FINGER_DOWN) {
+        const float *r = g_stick_btn_rect;
+        if (stick_btn_held || r[2] <= 0 || x < r[0] || x > r[0] + r[2] || y < r[1] || y > r[1] + r[3]) return false;
+        extern volatile bool g_stick_motion;
+        g_stick_motion = !g_stick_motion;
+        stick_btn_held = true, stick_btn_finger = e->tfinger.fingerID;
+        return true;
+    }
+    if (!stick_btn_held || e->tfinger.fingerID != stick_btn_finger) return false;
+    if (e->type == SDL_EVENT_FINGER_UP || e->type == SDL_EVENT_FINGER_CANCELED) stick_btn_held = false;
+    return true;
+}
+
 // SDL events (the UI thread): true when the event was for the on-screen controls.
 extern "C" bool touch_controls_event(const SDL_Event *e) {
     switch (e->type) {
@@ -291,6 +309,7 @@ extern "C" bool touch_controls_event(const SDL_Event *e) {
     case SDL_EVENT_FINGER_DOWN: case SDL_EVENT_FINGER_MOTION: case SDL_EVENT_FINGER_UP: case SDL_EVENT_FINGER_CANCELED: break;
     default: return false;
     }
+    if (!editing && !menu_input_captured() && stick_button(e, e->tfinger.x * disp_w, e->tfinger.y * disp_h)) return true;
     if (!editing && !menu_input_captured() && overlay_drag(e, e->tfinger.x * disp_w, e->tfinger.y * disp_h)) return true;
     if (!editing && (menu_input_captured() || !g_settings.touch_controls || hide_auto)) { release_all(); return false; }  // (the menu's clicks)
     used = true;
