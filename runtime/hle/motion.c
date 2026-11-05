@@ -74,10 +74,15 @@ static void fuse(float w[3], const float a[3], float dt) {
 }
 
 // A sample: angular velocity w (rad/s, the Switch's frame) over dt seconds (m_lock held)
+static void ring_push(const float w[3], float dt);
 static void add_sample(const float w[3], float dt) {
     if (!q_set) level_from(m_accel);
     float wc[3] = {w[0], w[1], w[2]};
     fuse(wc, m_accel, dt);
+    ring_push(w, dt);
+}
+// (S23) The sample of the attitude q as it is now and the angular velocity w (rad/s) into the ring (m_lock held)
+static void ring_push(const float w[3], float dt) {
     ring_head = (ring_head + 1) % RING;
     if (ring_n < RING) ring_n++;
     SixAxisState *s = &ring[ring_head];
@@ -100,8 +105,10 @@ static void add_sample(const float w[3], float dt) {
 }
 
 // SDL's frame (rad/s or m/s^2) in: angular velocity -> a sample, acceleration -> the way down
+extern volatile bool g_stick_motion;
 static void feed(SDL_SensorType type, const float d[3], uint64_t ts) {
     pthread_mutex_lock(&m_lock);
+    if (g_stick_motion) { pthread_mutex_unlock(&m_lock); return; }  // (S23: the sticks make the motion now)
     if (type == SDL_SENSOR_ACCEL) {
         m_accel[0] = -d[0] / 9.80665f, m_accel[1] = d[2] / 9.80665f, m_accel[2] = -d[1] / 9.80665f;
         if (!q_set) level_from(m_accel);
@@ -235,6 +242,82 @@ static void own_sample(uint64_t now) {
     add_sample(w, dt);
 }
 
+// ---- (S23) Motion with the sticks (the menu's System tab > Controls; not saved: off at every start of the app). For the
+// shrines' motion puzzles, where tilting the phone just right was hard work: the left stick tilts the controller, both ways
+// at once, up to 60 degrees, and back to flat when let go - as tilting a Switch controller in the hands; the right stick
+// turns it further and leaves it there, half a turn a second at full tilt - to turn a puzzle upside down. The two add up:
+// the left stick's tilt from where the right one left it. Meanwhile the phone's and the controller's own sensors are left
+// out (feed), and the game gets the sticks centred (hle/input.c): they move neither the player nor the camera.
+// LARECOMP_STICK_MOTION_SIGN=-1: both sticks the other way round.
+volatile bool g_stick_motion;
+static _Atomic int32_t sm_lx, sm_ly, sm_rx, sm_ry;
+void motion_sticks(int32_t lx, int32_t ly, int32_t rx, int32_t ry) { sm_lx = lx, sm_ly = ly, sm_rx = rx, sm_ry = ry; }
+static float sm_base[4] = {1, 0, 0, 0};  // the right stick's attitude (w x y z)
+static float sm_tilt[2];                 // the left stick's tilt, radians about x and y (followed smoothly)
+static bool sm_was;
+static void qmul(const float a[4], const float b[4], float o[4]) {
+    float r[4] = {a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3], a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
+                  a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1], a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0]};
+    memcpy(o, r, sizeof r);
+}
+static void qaxis(float ax, float ay, float az, float ang, float o[4]) {  // ang radians about the unit axis (ax, ay, az)
+    float s = sinf(ang * 0.5f);
+    o[0] = cosf(ang * 0.5f), o[1] = ax * s, o[2] = ay * s, o[3] = az * s;
+}
+static float stick_unit(int32_t v) {  // -1..1 past a 10% dead zone
+    float f = v / 32767.0f, a = fabsf(f);
+    if (a < 0.1f) return 0;
+    f = (a - 0.1f) / 0.9f * (f < 0 ? -1.0f : 1.0f);
+    return f > 1 ? 1 : f < -1 ? -1 : f;
+}
+// The Switch's frame: x right, y forward, z up; the sticks' y is up / forward. Left stick forward: the far edge down
+// (about x, negative); right: the right edge down (about y, positive). The right stick turns about the same two axes.
+static void stick_sample(uint64_t now) {  // (m_lock held)
+    float dt = m_rest_ns && now > m_rest_ns ? (float)((now - m_rest_ns) / 1e9) : 1 / 30.0f;
+    if (dt > 0.1f) dt = 1 / 30.0f;
+    m_rest_ns = now;
+    static int sign;
+    if (!sign) sign = getenv("LARECOMP_STICK_MOTION_SIGN") && atoi(getenv("LARECOMP_STICK_MOTION_SIGN")) < 0 ? -1 : 1;
+    float lx = sign * stick_unit(sm_lx), ly = sign * stick_unit(sm_ly), rx = sign * stick_unit(sm_rx), ry = sign * stick_unit(sm_ry);
+    if (rx || ry) {
+        const float rate = 3.14159265f;  // (rad/s at full tilt: half a turn a second)
+        float wx = -ry * rate, wy = rx * rate, m = sqrtf(wx * wx + wy * wy), d[4];
+        qaxis(wx / m, wy / m, 0, m * dt, d);
+        qmul(sm_base, d, sm_base);
+        float n = sqrtf(sm_base[0] * sm_base[0] + sm_base[1] * sm_base[1] + sm_base[2] * sm_base[2] + sm_base[3] * sm_base[3]);
+        for (int i = 0; i < 4; i++) sm_base[i] /= n;
+    }
+    const float maxt = 1.0471976f;  // (60 degrees)
+    float k = fminf(1.0f, dt * 10);  // (the tilt follows the stick in about a tenth of a second: no jumps)
+    sm_tilt[0] += (-ly * maxt - sm_tilt[0]) * k;
+    sm_tilt[1] += (lx * maxt - sm_tilt[1]) * k;
+    float tx[4], ty[4], t[4], nq[4];
+    qaxis(1, 0, 0, sm_tilt[0], tx);
+    qaxis(0, 1, 0, sm_tilt[1], ty);
+    qmul(tx, ty, t);
+    qmul(sm_base, t, nq);
+    // the angular velocity from the last attitude to this one, in the sensor's own axes
+    float inv[4] = {q[0], -q[1], -q[2], -q[3]}, dq[4];
+    qmul(inv, nq, dq);
+    if (dq[0] < 0) for (int i = 0; i < 4; i++) dq[i] = -dq[i];
+    float w[3] = {2 * dq[1] / dt, 2 * dq[2] / dt, 2 * dq[3] / dt};
+    memcpy(q, nq, sizeof nq);
+    q_set = true;
+    // the way down seen from the sensor, as an accelerometer at rest reads it (fuse's -(R's third row))
+    m_accel[0] = -2 * (q[1] * q[3] - q[0] * q[2]);
+    m_accel[1] = -2 * (q[2] * q[3] + q[0] * q[1]);
+    m_accel[2] = -(1 - 2 * (q[1] * q[1] + q[2] * q[2]));
+    ring_push(w, dt);
+}
+static void stick_mode_check(void) {  // (m_lock held) turned on: flat, as a controller lying still; off: levelled again
+    if (g_stick_motion == sm_was) return;
+    sm_was = g_stick_motion;
+    sm_base[0] = 1, sm_base[1] = sm_base[2] = sm_base[3] = 0, sm_tilt[0] = sm_tilt[1] = 0;
+    if (sm_was) q[0] = 1, q[1] = q[2] = q[3] = 0, q_set = true, m_accel[0] = m_accel[1] = 0, m_accel[2] = -1;
+    else q_set = false;
+    LOG("[motion] motion with the sticks %s\n", sm_was ? "on: the phone's and the controller's sensors left out" : "off");
+}
+
 // int GetSixAxisSensorHandles(SixAxisSensorHandle *out, int count, const NpadIdType &, NpadStyleSet): one sensor, two
 // for a pair of Joy-Con (both read the same here)
 HLE_FUNC("_ZN2nn3hid23GetSixAxisSensorHandlesEPNS0_19SixAxisSensorHandleEiRKjNS_4util10BitFlagSetILi32ENS0_12NpadStyleTagEEE",
@@ -265,7 +348,9 @@ HLE_FUNC("_ZN2nn3hid22GetSixAxisSensorStatesEPNS0_18SixAxisSensorStateEiRKNS0_19
     int n = (int)(int32_t)c->x[1];
     uint64_t now = SDL_GetTicksNS();
     pthread_mutex_lock(&m_lock);
-    if (!g_settings.motion || ENV("LARECOMP_MOTION_TEST") || now - m_live_ns > 250000000) own_sample(now);
+    stick_mode_check();
+    if (g_stick_motion) stick_sample(now);
+    else if (!g_settings.motion || ENV("LARECOMP_MOTION_TEST") || now - m_live_ns > 250000000) own_sample(now);
     if (n > ring_n) n = ring_n;
     if (n < 0) n = 0;
     for (int i = 0; i < n; i++) out[i] = ring[(ring_head - i + RING) % RING];

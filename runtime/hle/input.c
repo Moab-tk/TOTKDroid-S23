@@ -462,6 +462,12 @@ static void fill_state(Cpu *c) {
     }
     int32_t lx = clamp_axis((menu ? 0 : key_lx + pad_lx + TOUCH_LX) + script_lx), ly = clamp_axis((menu ? 0 : key_ly + pad_ly + TOUCH_LY) + script_ly);
     int32_t rx = clamp_axis((menu ? 0 : key_rx + pad_rx + TOUCH_RX) + script_rx), ry = clamp_axis((menu ? 0 : key_ry + pad_ry + TOUCH_RY) + script_ry);
+    {   // (S23) Motion with the sticks (hle/motion.c): they tilt the motion controller, and the game gets them centred
+        extern volatile bool g_stick_motion;
+        extern void motion_sticks(int32_t lx, int32_t ly, int32_t rx, int32_t ry);
+        motion_sticks(lx, ly, rx, ry);
+        if (g_stick_motion) lx = ly = rx = ry = 0;
+    }
     // stick directions also appear as buttons (bits 16-23)
     if (lx < -16000) b |= 1ull << 16;
     if (ly > 16000) b |= 1ull << 17;
