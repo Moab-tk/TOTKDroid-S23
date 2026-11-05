@@ -89,6 +89,11 @@ de todas as 45 configurações: se cada uma chega ao jogo e quando passa a valer
   (`totkrecomp-crash.txt`), "Bateria" e "conectado" em português, a cena contada como 1600x896.
 - Robustez: arquivo de configurações salvo no Windows (fim de linha) funciona; memória física só dentro da janela do
   jogo; a lista de pipelines conhecidos é gravada sem segurar a trava da linha de desenho.
+- **Movimento pelos analógicos** (pedido do Moab, para os quebra-cabeças de movimento dos santuários): no menu do app,
+  aba Sistema > Controles. O analógico esquerdo inclina o controle até 60° para qualquer lado e volta reto ao soltar; o
+  direito gira mais e deixa onde parou, para virar o quebra-cabeça de cabeça para baixo. Enquanto ligado, os analógicos
+  não mexem o personagem nem a câmera, o sensor do celular fica de lado e um aviso no alto da tela mostra que está
+  ligado. Não fica salvo: o app sempre abre com ele desligado.
 - Medição nova no registro: `[prog]`, uma vez por minuto, quantos programas de shader o jogo descartou e quanto esperou.
 - **Não foi testada jogando.**
 
