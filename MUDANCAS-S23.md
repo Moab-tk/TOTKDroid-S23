@@ -117,6 +117,9 @@ de todas as 45 configurações: se cada uma chega ao jogo e quando passa a valer
 - **Versão Universal** (pedido do Moab), como a do BOTW: `-Puniversal=1` compila sem as instruções do 8 Gen 2
   (`S23_CPU`) e leva os 26 drivers em 8 abas, com o recomendado para cada chip. Mesmo pacote: uma instala por cima da
   outra. Conferida com o `conferir_universal.py` do BOTW. Experimental: só testada no S23.
+- **Universal testada no S23 (05/11/2026):** duas medições de 10 minutos, cena em 1x, FSR 1, sem SMAA. Na primeira, 29,6
+  FPS de média, sem erro. Na segunda, com a pele do celular já a 45 °C, o sistema freou a GPU até 348 MHz e o processador
+  até 1,6 GHz: 27,8 de média, mínimo 16. O freio forte começa com a pele perto de 45,5 °C.
 
 ## O que não foi modificado
 
